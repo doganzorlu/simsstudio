@@ -2,12 +2,131 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        xmlns:vm="clr-namespace:SimsConverter.App.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="600"
         x:Class="SimsConverter.App.MainWindow"
-        Title="SIMSStudio — Solution Bootstrap"
-        Width="600" Height="400">
-    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
-        <TextBlock Text="SIMSStudio — Sims Converter" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
-        <TextBlock Text="EPIC-001 Solution Bootstrap Initialized" Foreground="Gray" HorizontalAlignment="Center"/>
-    </StackPanel>
+        x:DataType="vm:ResourceInspectorViewModel"
+        Title="SIMSStudio — Package &amp; Sims3Pack Inspector &amp; Exporter"
+        Width="1000" Height="600">
+    <DockPanel Margin="16">
+        <!-- Header -->
+        <TextBlock DockPanel.Dock="Top" Text="Package &amp; Sims3Pack Inspector &amp; Raw Exporter" FontSize="20" FontWeight="Bold" Margin="0,0,0,12"/>
+
+        <!-- File Selection & Action Panel -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*, Auto, Auto, Auto, Auto, Auto" RowDefinitions="Auto, Auto" Margin="0,0,0,12">
+            <TextBox Grid.Column="0" Text="{Binding SelectedFilePath}" PlaceholderText="Enter or select .package or .sims3pack file path..." Margin="0,0,8,0"/>
+            <Button Grid.Column="1" Command="{Binding BrowseCommand}" Content="Browse..." Margin="0,0,8,0"/>
+            <Button Grid.Column="2" Command="{Binding InspectCommand}" Content="Inspect File" Margin="0,0,8,0"/>
+            <CheckBox Grid.Column="3" IsChecked="{Binding AllowOverwrite}" Content="Overwrite Existing" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <Button Grid.Column="4" Command="{Binding ExportResourceCommand}" Content="Export Selected Raw Resource" IsVisible="{Binding !IsSims3PackMode}"/>
+            <Button Grid.Column="5" Command="{Binding ExportSims3PackPayloadCommand}" Content="Export .package Payload" IsVisible="{Binding IsSims3PackMode}"/>
+            <ProgressBar Grid.Row="1" Grid.ColumnSpan="6" IsVisible="{Binding IsBusy}" IsIndeterminate="True" Margin="0,8,0,0"/>
+        </Grid>
+
+        <!-- Status Bar -->
+        <TextBlock DockPanel.Dock="Top" Text="{Binding StatusMessage}" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,12"/>
+
+        <!-- Sims3Pack Metadata Panel (Visible when IsSims3PackMode is true) -->
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding IsSims3PackMode}"
+                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="12"
+                Margin="0,0,0,12">
+            <Grid ColumnDefinitions="*, *, *" RowDefinitions="Auto, Auto">
+                <StackPanel Grid.Column="0" Grid.Row="0" Margin="0,0,8,4">
+                    <TextBlock Text="Title:" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBlock Text="{Binding Sims3PackTitle, FallbackValue='N/A'}"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Grid.Row="0" Margin="0,0,8,4">
+                    <TextBlock Text="Asset ID:" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBlock Text="{Binding Sims3PackAssetId, FallbackValue='N/A'}"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Grid.Row="0" Margin="0,0,0,4">
+                    <TextBlock Text="Asset Type:" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBlock Text="{Binding Sims3PackAssetType, FallbackValue='N/A'}"/>
+                </StackPanel>
+                <StackPanel Grid.Column="0" Grid.Row="1" Margin="0,4,8,0">
+                    <TextBlock Text="Root Element:" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBlock Text="{Binding Sims3PackRootElement, FallbackValue='N/A'}"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Grid.Row="1" Margin="0,4,8,0">
+                    <TextBlock Text="Encoding:" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBlock Text="{Binding Sims3PackEncoding, FallbackValue='N/A'}"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Grid.Row="1" Margin="0,4,0,0">
+                    <TextBlock Text="XML Size:" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBlock Text="{Binding Sims3PackXmlSize, FallbackValue='N/A'}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Diagnostic Issues Section (Visible when HasIssues is true) -->
+        <Border DockPanel.Dock="Bottom"
+                IsVisible="{Binding HasIssues}"
+                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                BorderBrush="{DynamicResource SystemControlErrorTextForegroundBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="8"
+                Margin="0,12,0,0">
+            <StackPanel>
+                <TextBlock Text="Diagnostic Issues Reported:" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}" Margin="0,0,0,4"/>
+                <ListBox ItemsSource="{Binding Issues}" MaxHeight="100">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="{Binding Code}" FontWeight="Bold" Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"/>
+                                <TextBlock Text="{Binding Severity, StringFormat='[{0}]'}" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBlock Text="{Binding Message}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+        </Border>
+
+        <!-- DBPF Resource Table Grid (Visible when IsSims3PackMode is false) -->
+        <DataGrid ItemsSource="{Binding Resources}"
+                  SelectedItem="{Binding SelectedResource}"
+                  IsVisible="{Binding !IsSims3PackMode}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  GridLinesVisibility="All"
+                  BorderThickness="1"
+                  BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Formatted Key" Binding="{Binding FormattedKey}" CellStyleClasses="monospaced" Width="2*"/>
+                <DataGridTextColumn Header="Type" Binding="{Binding TypeHex}" CellStyleClasses="monospaced" Width="*"/>
+                <DataGridTextColumn Header="Group" Binding="{Binding GroupHex}" CellStyleClasses="monospaced" Width="*"/>
+                <DataGridTextColumn Header="Instance" Binding="{Binding InstanceHex}" CellStyleClasses="monospaced" Width="1.5*"/>
+                <DataGridTextColumn Header="Offset" Binding="{Binding Offset}" Width="*"/>
+                <DataGridTextColumn Header="Size (B)" Binding="{Binding CompressedSize}" Width="*"/>
+                <DataGridTextColumn Header="Decomp (B)" Binding="{Binding DecompressedSize}" Width="*"/>
+                <DataGridTextColumn Header="Compression" Binding="{Binding CompressionName}" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Sims3Pack Embedded Payload Table Grid (Visible when IsSims3PackMode is true) -->
+        <DataGrid ItemsSource="{Binding Sims3PackPayloads}"
+                  SelectedItem="{Binding SelectedSims3PackPayload}"
+                  IsVisible="{Binding IsSims3PackMode}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  GridLinesVisibility="All"
+                  BorderThickness="1"
+                  BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="#" Binding="{Binding EntryIndex}" Width="0.5*"/>
+                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="*"/>
+                <DataGridTextColumn Header="Offset" Binding="{Binding DataOffsetHex}" CellStyleClasses="monospaced" Width="1.5*"/>
+                <DataGridTextColumn Header="Estimated Size" Binding="{Binding EstimatedSizeFormatted}" Width="1.2*"/>
+                <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName}" Width="2*"/>
+                <DataGridTextColumn Header="Exportable" Binding="{Binding CanExport}" Width="*"/>
+                <DataGridTextColumn Header="Issues" Binding="{Binding Issues.Count}" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
 </Window>

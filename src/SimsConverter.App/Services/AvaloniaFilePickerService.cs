@@ -1,0 +1,88 @@
+using System;
+using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Platform.Storage;
+
+namespace SimsConverter.App.Services;
+
+public class AvaloniaFilePickerService : IFilePickerService
+{
+    private readonly Func<Window?> _windowProvider;
+
+    public AvaloniaFilePickerService(Func<Window?> windowProvider)
+    {
+        _windowProvider = windowProvider ?? throw new ArgumentNullException(nameof(windowProvider));
+    }
+
+    public async Task<string?> OpenPackageFilePickerAsync()
+    {
+        var window = _windowProvider();
+        if (window == null)
+        {
+            return null;
+        }
+
+        var topLevel = TopLevel.GetTopLevel(window);
+        if (topLevel?.StorageProvider == null)
+        {
+            return null;
+        }
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select Sims Package or Sims3Pack File",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Sims Containers (*.package; *.sims3pack)")
+                {
+                    Patterns = new[] { "*.package", "*.sims3pack" }
+                },
+                new FilePickerFileType("DBPF Package (*.package)")
+                {
+                    Patterns = new[] { "*.package" }
+                },
+                new FilePickerFileType("Sims3Pack Container (*.sims3pack)")
+                {
+                    Patterns = new[] { "*.sims3pack" }
+                },
+                FilePickerFileTypes.All
+            }
+        });
+
+        if (files.Count > 0)
+        {
+            return files[0].TryGetLocalPath();
+        }
+
+        return null;
+    }
+
+    public async Task<string?> OpenFolderPickerAsync()
+    {
+        var window = _windowProvider();
+        if (window == null)
+        {
+            return null;
+        }
+
+        var topLevel = TopLevel.GetTopLevel(window);
+        if (topLevel?.StorageProvider == null)
+        {
+            return null;
+        }
+
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Select Export Destination Folder",
+            AllowMultiple = false
+        });
+
+        if (folders.Count > 0)
+        {
+            return folders[0].TryGetLocalPath();
+        }
+
+        return null;
+    }
+}
