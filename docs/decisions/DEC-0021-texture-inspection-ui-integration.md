@@ -1,6 +1,6 @@
 # DEC-0021: Texture Inspection UI Integration Architecture
 
-- **Status**: Pending Approval
+- **Status**: Approved
 - **Date**: 2026-08-28
 - **Author**: AI2 (Engineering Executor)
 - **Task**: SIMS-TEX-006

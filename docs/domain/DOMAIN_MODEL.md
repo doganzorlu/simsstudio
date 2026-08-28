@@ -103,8 +103,8 @@ Avalonia UI application root containing composition root, dependency injection, 
 
 #### Key Components
 - **App Composition Root**: Wires `IDbpfPackageParser`, `IPackageInspectionService`, `IPackageResourceExporter`, `IResourceExportService`, `ISims3PackDetector`, `ISims3PackXmlParser`, `ISims3PackPayloadCatalogScanner`, `ISims3PackPayloadExporter`, `ISims3PackInspectionService`, `IPackageDetector`, `IFilePickerService`, `ITextureResourceClassifier`, `ITextureResourceExtractor`, `IDdsHeaderParser`, `IDdsPayloadValidator`, `ITextureInspectionService`, and `ResourceInspectorViewModel` via `Microsoft.Extensions.DependencyInjection`.
-- **ResourceInspectorViewModel**: Reactive ViewModel (`CommunityToolkit.Mvvm`) managing `SelectedFilePath`, `SelectedResource`, `SelectedSims3PackPayload`, `IsSims3PackMode`, `IsBusy`, `StatusMessage`, `Resources`, `Sims3PackPayloads`, `Issues`, `CanInspect`, `CanExport`, `CanExportSims3PackPayload`, `InspectCommand`, `ExportResourceCommand`, and `ExportSims3PackPayloadCommand`.
-- **MainWindow.axaml**: Semantic XAML view bound to `ResourceInspectorViewModel` with monospaced hex DataGrid columns, Sims3Pack metadata header, payload DataGrid, issue diagnostic border, and action buttons.
+- **ResourceInspectorViewModel**: Reactive ViewModel (`CommunityToolkit.Mvvm`) managing `SelectedFilePath`, `SelectedResource`, `SelectedSims3PackPayload`, `SelectedTextureResource`, `IsSims3PackMode`, `IsBusy`, `StatusMessage`, `Resources`, `Sims3PackPayloads`, `TextureResources`, `Issues`, `CanInspect`, `CanExport`, `CanExportSims3PackPayload`, `CanExtractSelectedTexture`, `CanParseSelectedDdsHeader`, `InspectCommand`, `ExportResourceCommand`, and `ExportSims3PackPayloadCommand`.
+- **MainWindow.axaml**: Semantic XAML view bound to `ResourceInspectorViewModel` with monospaced hex DataGrid columns, Sims3Pack metadata header, TabControl containing Package Resources and Texture Candidates DataGrids, payload DataGrid, issue diagnostic border, and action buttons.
 
 ---
 

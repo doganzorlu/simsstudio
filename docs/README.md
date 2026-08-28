@@ -31,7 +31,7 @@ dotnet test SimsConverter.sln
 ### Container & Format Support Matrix
 - **DBPF `.package` (Sims 3 / Sims 4)**: Inspection & Raw Payload Export Supported
 - **`.sims3pack` (Sims 3 Archive Wrapper)**: Container Detection, Secure XML Manifest Parsing, Embedded Archive Catalog Scanning, Embedded DBPF Raw Payload Export, UI Inspection Screen & Real Fixture Validation Harness Supported
-- **Phase 2 Texture Pipeline**: Texture TypeId Catalog, Resource Candidate Classifier, Raw Texture Payload Extraction Boundary, Bounds-Checked DDS Binary Header Reader, DDS Payload Truncation Validator & Texture Inspection Application Service Supported
+- **Phase 2 Texture Pipeline**: Texture TypeId Catalog, Resource Candidate Classifier, Raw Texture Payload Extraction Boundary, Bounds-Checked DDS Binary Header Reader, DDS Payload Truncation Validator, Texture Inspection Application Service & Desktop UI Tab Screen Supported
 
 ### Key Decision Records
 - [DEC-0001: Architecture Solution Bootstrap](decisions/DEC-0001-architecture-bootstrap.md)
