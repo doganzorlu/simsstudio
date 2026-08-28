@@ -18,6 +18,7 @@ public partial class ResourceInspectorViewModel : ObservableObject
     private readonly ISims3PackInspectionService? _sims3PackInspectionService;
     private readonly IResourceExportService? _exportService;
     private readonly IFilePickerService? _filePickerService;
+    private readonly ITextureInspectionService? _textureInspectionService;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(InspectCommand))]
@@ -38,6 +39,9 @@ public partial class ResourceInspectorViewModel : ObservableObject
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ExportSims3PackPayloadCommand))]
     private Sims3PackPayloadRow? _selectedSims3PackPayload;
+
+    [ObservableProperty]
+    private TextureResourceRow? _selectedTextureResource;
 
     [ObservableProperty]
     private bool _isSims3PackMode;
@@ -68,9 +72,13 @@ public partial class ResourceInspectorViewModel : ObservableObject
 
     public ObservableCollection<PackageResourceRow> Resources { get; } = new();
     public ObservableCollection<Sims3PackPayloadRow> Sims3PackPayloads { get; } = new();
+    public ObservableCollection<TextureResourceRow> TextureResources { get; } = new();
     public ObservableCollection<ConversionIssue> Issues { get; } = new();
 
     public bool HasIssues => Issues.Count > 0;
+    public bool HasTextureResources => TextureResources.Count > 0;
+    public bool CanExtractSelectedTexture => SelectedTextureResource?.CanExtractRawPayload == true;
+    public bool CanParseSelectedDdsHeader => SelectedTextureResource?.CanParseDdsHeader == true;
     public bool CanInspect => !IsBusy && !string.IsNullOrWhiteSpace(SelectedFilePath);
     public bool CanExport => !IsBusy && SelectedResource != null && !string.IsNullOrWhiteSpace(SelectedFilePath) && !IsSims3PackMode;
     public bool CanExportSims3PackPayload => !IsBusy && SelectedSims3PackPayload != null && SelectedSims3PackPayload.CanExport && !string.IsNullOrWhiteSpace(SelectedFilePath) && IsSims3PackMode;
@@ -79,12 +87,20 @@ public partial class ResourceInspectorViewModel : ObservableObject
         IPackageInspectionService inspectionService,
         IResourceExportService? exportService = null,
         IFilePickerService? filePickerService = null,
-        ISims3PackInspectionService? sims3PackInspectionService = null)
+        ISims3PackInspectionService? sims3PackInspectionService = null,
+        ITextureInspectionService? textureInspectionService = null)
     {
         _inspectionService = inspectionService ?? throw new ArgumentNullException(nameof(inspectionService));
         _exportService = exportService;
         _filePickerService = filePickerService;
         _sims3PackInspectionService = sims3PackInspectionService;
+        _textureInspectionService = textureInspectionService;
+    }
+
+    partial void OnSelectedTextureResourceChanged(TextureResourceRow? value)
+    {
+        OnPropertyChanged(nameof(CanExtractSelectedTexture));
+        OnPropertyChanged(nameof(CanParseSelectedDdsHeader));
     }
 
     [RelayCommand]
@@ -112,11 +128,16 @@ public partial class ResourceInspectorViewModel : ObservableObject
         StatusMessage = "Inspecting package container...";
         Resources.Clear();
         Sims3PackPayloads.Clear();
+        TextureResources.Clear();
         Issues.Clear();
         SelectedResource = null;
         SelectedSims3PackPayload = null;
+        SelectedTextureResource = null;
         ClearSims3PackMetadata();
         OnPropertyChanged(nameof(HasIssues));
+        OnPropertyChanged(nameof(HasTextureResources));
+        OnPropertyChanged(nameof(CanExtractSelectedTexture));
+        OnPropertyChanged(nameof(CanParseSelectedDdsHeader));
 
         bool isSims3PackFile = SelectedFilePath.EndsWith(".sims3pack", StringComparison.OrdinalIgnoreCase);
 
@@ -176,8 +197,26 @@ public partial class ResourceInspectorViewModel : ObservableObject
                         Resources.Add(row);
                     }
 
+                    if (_textureInspectionService != null)
+                    {
+                        var textureResult = _textureInspectionService.InspectPackageTextures(result);
+                        foreach (var texRow in textureResult.Rows)
+                        {
+                            TextureResources.Add(texRow);
+                        }
+                        foreach (var issue in textureResult.Issues)
+                        {
+                            if (!Issues.Contains(issue))
+                            {
+                                Issues.Add(issue);
+                            }
+                        }
+                        OnPropertyChanged(nameof(HasIssues));
+                        OnPropertyChanged(nameof(HasTextureResources));
+                    }
+
                     StatusMessage = Resources.Count > 0
-                        ? $"Package inspection complete. Found {Resources.Count} resource entries."
+                        ? $"Package inspection complete. Found {Resources.Count} resource entries ({TextureResources.Count} texture candidates)."
                         : "Package inspection complete. Container contains 0 resource entries.";
                 }
                 else
@@ -200,8 +239,11 @@ public partial class ResourceInspectorViewModel : ObservableObject
         {
             IsBusy = false;
             OnPropertyChanged(nameof(HasIssues));
+            OnPropertyChanged(nameof(HasTextureResources));
             OnPropertyChanged(nameof(CanExport));
             OnPropertyChanged(nameof(CanExportSims3PackPayload));
+            OnPropertyChanged(nameof(CanExtractSelectedTexture));
+            OnPropertyChanged(nameof(CanParseSelectedDdsHeader));
         }
     }
 

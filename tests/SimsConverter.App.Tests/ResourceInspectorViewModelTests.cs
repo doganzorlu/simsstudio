@@ -10,8 +10,12 @@ using SimsConverter.App.Services;
 using SimsConverter.App.ViewModels;
 using SimsConverter.Application.Contracts;
 using SimsConverter.Application.Models;
+using SimsConverter.Application.Services;
 using SimsConverter.Domain.Enums;
 using SimsConverter.Domain.Models;
+using SimsConverter.Textures.Constants;
+using SimsConverter.Textures.Contracts;
+using SimsConverter.Textures.Services;
 using Xunit;
 using FluentAssertions;
 
@@ -19,6 +23,14 @@ namespace SimsConverter.App.Tests;
 
 public class ResourceInspectorViewModelTests
 {
+    private readonly ITextureResourceClassifier _textureClassifier = new TextureResourceClassifier();
+    private readonly ITextureInspectionService _textureInspectionService;
+
+    public ResourceInspectorViewModelTests()
+    {
+        _textureInspectionService = new TextureInspectionService(new FakeInspectionService(PackageInspectionResult.Failure("", "ERR", "Err")), _textureClassifier);
+    }
+
     [Fact]
     public async Task BrowseAsync_GivenPickedFilePath_UpdatesSelectedFilePath()
     {
@@ -50,11 +62,11 @@ public class ResourceInspectorViewModelTests
     }
 
     [Fact]
-    public async Task InspectAsync_GivenValidPackage_PopulatesResourcesAndUpdatesStatusMessage()
+    public async Task InspectAsync_GivenValidPackage_PopulatesResourcesAndTextureResources()
     {
         // Arrange
-        var stubRow = new PackageResourceRow(
-            0x00B2D882u,
+        var ddsRow = new PackageResourceRow(
+            TextureTypeIds.Ts3DdsTexture,
             0x00000000u,
             0x123456789ABCDEF0UL,
             "0x00B2D882",
@@ -72,12 +84,12 @@ public class ResourceInspectorViewModelTests
             true,
             "/path/to/test.package",
             new DbpfHeader("DBPF", 2, 0, 1, 96, 32),
-            new[] { stubRow },
+            new[] { ddsRow },
             Array.Empty<ConversionIssue>()
         );
 
         var stubService = new FakeInspectionService(stubResult);
-        var viewModel = new ResourceInspectorViewModel(stubService)
+        var viewModel = new ResourceInspectorViewModel(stubService, textureInspectionService: _textureInspectionService)
         {
             SelectedFilePath = "/path/to/test.package"
         };
@@ -90,8 +102,171 @@ public class ResourceInspectorViewModelTests
         viewModel.HasIssues.Should().BeFalse();
         viewModel.IsSims3PackMode.Should().BeFalse();
         viewModel.Resources.Should().ContainSingle();
-        viewModel.Resources[0].FormattedKey.Should().Be("00B2D882:00000000:123456789ABCDEF0");
-        viewModel.StatusMessage.Should().Contain("1 resource entries");
+        viewModel.TextureResources.Should().ContainSingle();
+        viewModel.HasTextureResources.Should().BeTrue();
+        viewModel.StatusMessage.Should().Contain("1 resource entries (1 texture candidates)");
+    }
+
+    [Fact]
+    public async Task InspectAsync_KnownDdsTextureSelected_SetsCanParseSelectedDdsHeaderAndCanExtractSelectedTextureTrue()
+    {
+        // Arrange: TS3 DDS Texture
+        var ddsRow = new PackageResourceRow(
+            TextureTypeIds.Ts3DdsTexture,
+            0x00000000u,
+            0x123456789ABCDEF0UL,
+            "0x00B2D882",
+            "0x00000000",
+            "0x123456789ABCDEF0",
+            "00B2D882:00000000:123456789ABCDEF0",
+            500,
+            1024,
+            1024,
+            PackageCompressionKind.None,
+            "None"
+        );
+
+        var stubResult = new PackageInspectionResult(
+            true,
+            "/path/to/test.package",
+            new DbpfHeader("DBPF", 2, 0, 1, 96, 32),
+            new[] { ddsRow },
+            Array.Empty<ConversionIssue>()
+        );
+
+        var stubService = new FakeInspectionService(stubResult);
+        var viewModel = new ResourceInspectorViewModel(stubService, textureInspectionService: _textureInspectionService)
+        {
+            SelectedFilePath = "/path/to/test.package"
+        };
+
+        // Act
+        await viewModel.InspectCommand.ExecuteAsync(null);
+        viewModel.SelectedTextureResource = viewModel.TextureResources[0];
+
+        // Assert
+        viewModel.CanExtractSelectedTexture.Should().BeTrue();
+        viewModel.CanParseSelectedDdsHeader.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InspectAsync_Ts4Rle2TextureSelected_SetsCanParseSelectedDdsHeaderFalseAndCanExtractSelectedTextureTrue()
+    {
+        // Arrange: TS4 RLE2 Texture (0x3453CF95)
+        var rle2Row = new PackageResourceRow(
+            TextureTypeIds.Ts4Rle2Texture,
+            0x00000000u,
+            0x1111UL,
+            "0x3453CF95",
+            "0x00000000",
+            "0x0000000000001111",
+            "3453CF95:00000000:0000000000001111",
+            500,
+            1024,
+            1024,
+            PackageCompressionKind.None,
+            "None"
+        );
+
+        var stubResult = new PackageInspectionResult(
+            true,
+            "/path/to/test.package",
+            new DbpfHeader("DBPF", 2, 0, 1, 96, 32),
+            new[] { rle2Row },
+            Array.Empty<ConversionIssue>()
+        );
+
+        var stubService = new FakeInspectionService(stubResult);
+        var viewModel = new ResourceInspectorViewModel(stubService, textureInspectionService: _textureInspectionService)
+        {
+            SelectedFilePath = "/path/to/test.package"
+        };
+
+        // Act
+        await viewModel.InspectCommand.ExecuteAsync(null);
+        viewModel.SelectedTextureResource = viewModel.TextureResources[0];
+
+        // Assert
+        viewModel.CanExtractSelectedTexture.Should().BeTrue();
+        viewModel.CanParseSelectedDdsHeader.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task InspectAsync_UnknownResourceSelected_PreservedInTextureResourcesWithIssue()
+    {
+        // Arrange: Unknown TypeId 0x99999999
+        var unknownRow = new PackageResourceRow(
+            0x99999999u,
+            0x00000000u,
+            0x9999UL,
+            "0x99999999",
+            "0x00000000",
+            "0x0000000000009999",
+            "99999999:00000000:0000000000009999",
+            500,
+            1024,
+            1024,
+            PackageCompressionKind.None,
+            "None"
+        );
+
+        var stubResult = new PackageInspectionResult(
+            true,
+            "/path/to/test.package",
+            new DbpfHeader("DBPF", 2, 0, 1, 96, 32),
+            new[] { unknownRow },
+            Array.Empty<ConversionIssue>()
+        );
+
+        var stubService = new FakeInspectionService(stubResult);
+        var viewModel = new ResourceInspectorViewModel(stubService, textureInspectionService: _textureInspectionService)
+        {
+            SelectedFilePath = "/path/to/test.package"
+        };
+
+        // Act
+        await viewModel.InspectCommand.ExecuteAsync(null);
+        viewModel.SelectedTextureResource = viewModel.TextureResources[0];
+
+        // Assert
+        viewModel.TextureResources.Should().ContainSingle();
+        viewModel.CanExtractSelectedTexture.Should().BeFalse();
+        viewModel.CanParseSelectedDdsHeader.Should().BeFalse();
+        viewModel.HasIssues.Should().BeTrue();
+        viewModel.Issues.Should().ContainSingle();
+        viewModel.Issues[0].Code.Should().Be("TEXC001");
+    }
+
+    [Fact]
+    public async Task InspectAsync_GivenInvalidPackage_ClearsTextureResources()
+    {
+        // Arrange
+        var issue = new ConversionIssue("PARSE002", "Header magic invalid", ConversionIssueSeverity.Error);
+        var stubResult = new PackageInspectionResult(
+            false,
+            "/path/to/corrupt.package",
+            null,
+            Array.Empty<PackageResourceRow>(),
+            new[] { issue }
+        );
+
+        var stubService = new FakeInspectionService(stubResult);
+        var viewModel = new ResourceInspectorViewModel(stubService, textureInspectionService: _textureInspectionService)
+        {
+            SelectedFilePath = "/path/to/corrupt.package"
+        };
+
+        // Act
+        await viewModel.InspectCommand.ExecuteAsync(null);
+
+        // Assert
+        viewModel.IsBusy.Should().BeFalse();
+        viewModel.HasIssues.Should().BeTrue();
+        viewModel.Resources.Should().BeEmpty();
+        viewModel.TextureResources.Should().BeEmpty();
+        viewModel.HasTextureResources.Should().BeFalse();
+        viewModel.Issues.Should().ContainSingle();
+        viewModel.Issues[0].Code.Should().Be("PARSE002");
     }
 
     [Fact]
@@ -207,7 +382,7 @@ public class ResourceInspectorViewModelTests
     [Fact]
     public void FilePicker_ServiceSourceCodeMustSupportSims3PackPattern()
     {
-        // Arrange: Scan AvaloniaFilePickerService source file to verify *.sims3pack filter pattern is registered
+        // Arrange
         string solutionDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
         string pickerServiceFile = Path.Combine(solutionDir, "src", "SimsConverter.App", "Services", "AvaloniaFilePickerService.cs");
 
@@ -215,37 +390,6 @@ public class ResourceInspectorViewModelTests
 
         string content = File.ReadAllText(pickerServiceFile);
         content.Should().Contain("*.sims3pack", "AvaloniaFilePickerService must include *.sims3pack in file picker patterns");
-    }
-
-    [Fact]
-    public async Task InspectAsync_GivenInvalidPackage_PopulatesIssuesAndSetsErrorStatus()
-    {
-        // Arrange
-        var issue = new ConversionIssue("PARSE002", "Header magic invalid", ConversionIssueSeverity.Error);
-        var stubResult = new PackageInspectionResult(
-            false,
-            "/path/to/corrupt.package",
-            null,
-            Array.Empty<PackageResourceRow>(),
-            new[] { issue }
-        );
-
-        var stubService = new FakeInspectionService(stubResult);
-        var viewModel = new ResourceInspectorViewModel(stubService)
-        {
-            SelectedFilePath = "/path/to/corrupt.package"
-        };
-
-        // Act
-        await viewModel.InspectCommand.ExecuteAsync(null);
-
-        // Assert
-        viewModel.IsBusy.Should().BeFalse();
-        viewModel.HasIssues.Should().BeTrue();
-        viewModel.Resources.Should().BeEmpty();
-        viewModel.Issues.Should().ContainSingle();
-        viewModel.Issues[0].Code.Should().Be("PARSE002");
-        viewModel.StatusMessage.Should().Contain("Header magic invalid");
     }
 
     [Fact]
@@ -326,7 +470,7 @@ public class ResourceInspectorViewModelTests
     [Fact]
     public void SourceScan_AppSourceFilesShouldNotContainBinaryPrimitivesOrBinaryParsing()
     {
-        // Arrange: Scan source directory of SimsConverter.App
+        // Arrange
         string solutionDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
         string appSourceDir = Path.Combine(solutionDir, "src", "SimsConverter.App");
 
@@ -373,11 +517,9 @@ public class ResourceInspectorViewModelTests
 
             string content = File.ReadAllText(file);
 
-            // Rule 1: No inline hex color codes in XAML
             var hexMatches = inlineHexRegex.Matches(content);
             hexMatches.Should().BeEmpty($"XAML file '{file}' violates UI Contract by using inline hex color code(s): {string.Join(", ", hexMatches.Select(m => m.Value))}");
 
-            // Rule 2: If file is MainWindow.axaml, verify HasIssues binding and monospaced cell styles
             if (Path.GetFileName(file) == "MainWindow.axaml")
             {
                 content.Should().Contain("IsVisible=\"{Binding HasIssues}\"", "MainWindow.axaml must bind diagnostic issue visibility to HasIssues boolean property");

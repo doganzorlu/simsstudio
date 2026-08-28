@@ -10,6 +10,8 @@ using SimsConverter.Application.Contracts;
 using SimsConverter.Application.Services;
 using SimsConverter.Package.Contracts;
 using SimsConverter.Package.Services;
+using SimsConverter.Textures.Contracts;
+using SimsConverter.Textures.Services;
 
 namespace SimsConverter.App;
 
@@ -61,6 +63,11 @@ public partial class App : Avalonia.Application
         services.AddSingleton<IPackageResourceExporter, PackageResourceExporter>();
         services.AddSingleton<IPackageInspectionService, PackageInspectionService>();
         services.AddSingleton<IResourceExportService, ResourceExportService>();
+        services.AddSingleton<ITextureResourceClassifier, TextureResourceClassifier>();
+        services.AddSingleton<ITextureResourceExtractor, TextureResourceExtractor>();
+        services.AddSingleton<IDdsHeaderParser, DdsHeaderParser>();
+        services.AddSingleton<IDdsPayloadValidator, DdsPayloadValidator>();
+        services.AddSingleton<ITextureInspectionService, TextureInspectionService>();
         services.AddSingleton<IFilePickerService, AvaloniaFilePickerService>();
         services.AddTransient<ResourceInspectorViewModel>();
     }

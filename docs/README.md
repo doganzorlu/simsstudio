@@ -7,7 +7,7 @@ Welcome to SIMSStudio. This project provides a multi-layered solution (`SimsConv
 ## 🛠️ Environment & SDK Setup
 
 ### Requirements
-- **SDK**: Not specified / standard .NET 10.0 GA (`10.0.400`).
+- **SDK**: .NET 10.0 Stable GA (`10.0.400`).
 - **Configuration File**: Root [global.json](../global.json) enforces SDK version alignment.
 
 ---
@@ -26,10 +26,12 @@ dotnet test SimsConverter.sln
 
 - **Domain & Application Model**: [DOMAIN_MODEL.md](domain/DOMAIN_MODEL.md)
 - **UI Contract Governance**: [UI_CONTRACT.md](ui-contract/UI_CONTRACT.md)
+- **Sims3Pack Compatibility Validation Report**: [sims3pack_compatibility_report.md](reports/sims3pack_compatibility_report.md)
 
 ### Container & Format Support Matrix
 - **DBPF `.package` (Sims 3 / Sims 4)**: Inspection & Raw Payload Export Supported
-- **`.sims3pack` (Sims 3 Archive Wrapper)**: Container Detection, Secure XML Manifest Parsing, Embedded Archive Catalog Scanning, Embedded DBPF Raw Payload Export & UI Inspection Screen Supported
+- **`.sims3pack` (Sims 3 Archive Wrapper)**: Container Detection, Secure XML Manifest Parsing, Embedded Archive Catalog Scanning, Embedded DBPF Raw Payload Export, UI Inspection Screen & Real Fixture Validation Harness Supported
+- **Phase 2 Texture Pipeline**: Texture TypeId Catalog, Resource Candidate Classifier, Raw Texture Payload Extraction Boundary, Bounds-Checked DDS Binary Header Reader, DDS Payload Truncation Validator & Texture Inspection Application Service Supported
 
 ### Key Decision Records
 - [DEC-0001: Architecture Solution Bootstrap](decisions/DEC-0001-architecture-bootstrap.md)
@@ -46,3 +48,9 @@ dotnet test SimsConverter.sln
 - [DEC-0012: Sims3Pack Embedded DBPF Payload Raw Exporter Architecture](decisions/DEC-0012-sims3pack-payload-exporter.md)
 - [DEC-0013: Sims3Pack Application Boundary Service Architecture](decisions/DEC-0013-sims3pack-application-service.md)
 - [DEC-0014: Sims3Pack UI Inspection Screen Architecture](decisions/DEC-0014-sims3pack-ui-screen.md)
+- [DEC-0015: Sims3Pack Real Fixture Validation & Compatibility Matrix](decisions/DEC-0015-sims3pack-real-fixture-validation.md)
+- [DEC-0016: Texture Resource Type Catalog & Candidate Classification Foundation](decisions/DEC-0016-texture-resource-classification.md)
+- [DEC-0017: Texture Resource Raw Extraction Boundary Architecture](decisions/DEC-0017-texture-resource-extraction-boundary.md)
+- [DEC-0018: DDS Header Parser & Metadata Reader Architecture](decisions/DEC-0018-dds-header-parser.md)
+- [DEC-0019: DDS Payload Validation & Size Estimation Architecture](decisions/DEC-0019-dds-payload-validation.md)
+- [DEC-0020: Texture Inspection Application Boundary Architecture](decisions/DEC-0020-texture-inspection-application-boundary.md)

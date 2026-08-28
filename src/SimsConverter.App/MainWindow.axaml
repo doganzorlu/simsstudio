@@ -88,26 +88,49 @@
             </StackPanel>
         </Border>
 
-        <!-- DBPF Resource Table Grid (Visible when IsSims3PackMode is false) -->
-        <DataGrid ItemsSource="{Binding Resources}"
-                  SelectedItem="{Binding SelectedResource}"
-                  IsVisible="{Binding !IsSims3PackMode}"
-                  AutoGenerateColumns="False"
-                  IsReadOnly="True"
-                  GridLinesVisibility="All"
-                  BorderThickness="1"
-                  BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="Formatted Key" Binding="{Binding FormattedKey}" CellStyleClasses="monospaced" Width="2*"/>
-                <DataGridTextColumn Header="Type" Binding="{Binding TypeHex}" CellStyleClasses="monospaced" Width="*"/>
-                <DataGridTextColumn Header="Group" Binding="{Binding GroupHex}" CellStyleClasses="monospaced" Width="*"/>
-                <DataGridTextColumn Header="Instance" Binding="{Binding InstanceHex}" CellStyleClasses="monospaced" Width="1.5*"/>
-                <DataGridTextColumn Header="Offset" Binding="{Binding Offset}" Width="*"/>
-                <DataGridTextColumn Header="Size (B)" Binding="{Binding CompressedSize}" Width="*"/>
-                <DataGridTextColumn Header="Decomp (B)" Binding="{Binding DecompressedSize}" Width="*"/>
-                <DataGridTextColumn Header="Compression" Binding="{Binding CompressionName}" Width="*"/>
-            </DataGrid.Columns>
-        </DataGrid>
+        <!-- Inspection Content Tabs for Package Mode (Visible when IsSims3PackMode is false) -->
+        <TabControl IsVisible="{Binding !IsSims3PackMode}">
+            <TabItem Header="Package Resources">
+                <DataGrid ItemsSource="{Binding Resources}"
+                          SelectedItem="{Binding SelectedResource}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          GridLinesVisibility="All"
+                          BorderThickness="1"
+                          BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Formatted Key" Binding="{Binding FormattedKey}" CellStyleClasses="monospaced" Width="2*"/>
+                        <DataGridTextColumn Header="Type" Binding="{Binding TypeHex}" CellStyleClasses="monospaced" Width="*"/>
+                        <DataGridTextColumn Header="Group" Binding="{Binding GroupHex}" CellStyleClasses="monospaced" Width="*"/>
+                        <DataGridTextColumn Header="Instance" Binding="{Binding InstanceHex}" CellStyleClasses="monospaced" Width="1.5*"/>
+                        <DataGridTextColumn Header="Offset" Binding="{Binding Offset}" Width="*"/>
+                        <DataGridTextColumn Header="Size (B)" Binding="{Binding CompressedSize}" Width="*"/>
+                        <DataGridTextColumn Header="Decomp (B)" Binding="{Binding DecompressedSize}" Width="*"/>
+                        <DataGridTextColumn Header="Compression" Binding="{Binding CompressionName}" Width="*"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem Header="Texture Candidates">
+                <DataGrid ItemsSource="{Binding TextureResources}"
+                          SelectedItem="{Binding SelectedTextureResource}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          GridLinesVisibility="All"
+                          BorderThickness="1"
+                          BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Formatted Key" Binding="{Binding FormattedKey}" CellStyleClasses="monospaced" Width="2*"/>
+                        <DataGridTextColumn Header="Format Name" Binding="{Binding FormatName}" Width="1.5*"/>
+                        <DataGridTextColumn Header="Map Kind" Binding="{Binding MapKind}" Width="*"/>
+                        <DataGridTextColumn Header="Game Version" Binding="{Binding DetectedGameVersion}" Width="*"/>
+                        <DataGridTextColumn Header="Can Extract" Binding="{Binding CanExtractRawPayload}" Width="*"/>
+                        <DataGridTextColumn Header="DDS Header Capable" Binding="{Binding CanParseDdsHeader}" Width="1.2*"/>
+                        <DataGridTextColumn Header="Issues" Binding="{Binding Issues.Count}" Width="0.8*"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+        </TabControl>
 
         <!-- Sims3Pack Embedded Payload Table Grid (Visible when IsSims3PackMode is true) -->
         <DataGrid ItemsSource="{Binding Sims3PackPayloads}"

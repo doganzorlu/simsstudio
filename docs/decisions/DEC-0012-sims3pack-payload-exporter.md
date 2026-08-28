@@ -1,6 +1,6 @@
 # DEC-0012: Sims3Pack Embedded DBPF Payload Raw Exporter Architecture
 
-- **Status**: Pending Approval
+- **Status**: Approved
 - **Date**: 2026-08-28
 - **Author**: AI2 (Engineering Executor)
 - **Task**: SIMS-S3P-004-R1

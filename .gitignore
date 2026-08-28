@@ -480,3 +480,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Local Sims3Pack real-world binary test fixtures & exported packages
+fixtures/local/
+artifacts/exports/
