@@ -195,17 +195,18 @@ public class MeshResourceExtractorTests
     public async Task ExtractAsync_PathTraversalCustomFileName_SanitizesFileNameAndStaysInsideOutputDirectory()
     {
         // Arrange: CustomFileName with ../ path traversal
+        string outputDir = Path.GetFullPath("/output/dir");
         var resId = new PackageResourceId(MeshTypeIds.Ts3Geom, 0x00000000, 0x1234UL);
         var entry = new PackageResourceEntry(resId, 100, 500, 500, PackageCompressionKind.None, 0);
         var classification = new MeshResourceClassification(resId, MeshClassificationKind.KnownMesh, MeshRoleKind.Geometry, "TS3 Geometry (GEOM)", GameVersion.Sims3, Array.Empty<ConversionIssue>());
-        var request = new MeshResourceExtractRequest("source.package", entry, classification, "/output/dir", CustomFileName: "../../escape");
+        var request = new MeshResourceExtractRequest("source.package", entry, classification, outputDir, CustomFileName: "../../escape");
 
         // Act
         var result = await _extractor.ExtractAsync(request);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        _fakePackageExporter.CapturedRequest!.OutputFilePath.Should().StartWith(Path.GetFullPath("/output/dir"));
+        _fakePackageExporter.CapturedRequest!.OutputFilePath.Should().StartWith(outputDir);
         _fakePackageExporter.CapturedRequest.OutputFilePath.Should().EndWith(".._.._escape.geom");
     }
 
@@ -213,17 +214,18 @@ public class MeshResourceExtractorTests
     public async Task ExtractAsync_AbsoluteCustomFileName_SanitizesFileNameAndStaysInsideOutputDirectory()
     {
         // Arrange: Absolute CustomFileName
+        string outputDir = Path.GetFullPath("/output/dir");
         var resId = new PackageResourceId(MeshTypeIds.Ts3Geom, 0x00000000, 0x1234UL);
         var entry = new PackageResourceEntry(resId, 100, 500, 500, PackageCompressionKind.None, 0);
         var classification = new MeshResourceClassification(resId, MeshClassificationKind.KnownMesh, MeshRoleKind.Geometry, "TS3 Geometry (GEOM)", GameVersion.Sims3, Array.Empty<ConversionIssue>());
-        var request = new MeshResourceExtractRequest("source.package", entry, classification, "/output/dir", CustomFileName: "/tmp/evil.geom");
+        var request = new MeshResourceExtractRequest("source.package", entry, classification, outputDir, CustomFileName: "/tmp/evil.geom");
 
         // Act
         var result = await _extractor.ExtractAsync(request);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        _fakePackageExporter.CapturedRequest!.OutputFilePath.Should().StartWith(Path.GetFullPath("/output/dir"));
+        _fakePackageExporter.CapturedRequest!.OutputFilePath.Should().StartWith(outputDir);
         _fakePackageExporter.CapturedRequest.OutputFilePath.Should().EndWith("_tmp_evil.geom");
     }
 
