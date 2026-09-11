@@ -17,5 +17,6 @@ public record DecorativeObjectConversionInputBundle(
     IReadOnlyList<DecorativeObjectSourceResourceLink> ResourceLinks,
     bool IsBundleValid,
     IReadOnlyList<ConversionIssue> Issues,
-    IReadOnlyList<PackageResourceRow>? OtherResources = null
+    IReadOnlyList<PackageResourceRow>? OtherResources = null,
+    ObjectCatalogMetadata? CatalogMetadata = null
 );

@@ -67,12 +67,28 @@ public class DecorativeObjectPackageWriterTests
         var plan = planBuilder.BuildWritePlan(bundle);
 
         plan.IsPlanValid.Should().BeTrue();
-        plan.PlannedResources.Should().HaveCount(7, "Includes 2 mesh bundles + 5 generated TS4 object resources (COBJ, MODL, MLODx2, Material).");
+        plan.PlannedResources.Should().HaveCount(8, "Includes 2 mesh bundles + 6 generated TS4 object resources (COBJ, OBJD, MODL, MLODx2, Material).");
         string.Compare(plan.PlannedResources[0].FormattedKey, plan.PlannedResources[1].FormattedKey, StringComparison.Ordinal).Should().BeLessThan(0);
     }
 
     private static PackageResourceEntry CreateZeroByteEntry(PackageResourceId id) =>
         new PackageResourceEntry(id, DataOffset: 0, CompressedSize: 0, DecompressedSize: 0, CompressionKind: PackageCompressionKind.None, CompressionFlags: 0);
+
+    private static byte[] CreateValidDdsPayload()
+    {
+        byte[] buffer = new byte[128 + 128]; // 128-byte header + 128 bytes 16x16 DXT1 pixels
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(0x00, 4), 0x20534444); // "DDS "
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(0x04, 4), 124);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(0x0C, 4), 16);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(0x10, 4), 16);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(0x1C, 4), 1);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(0x4C, 4), 32);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(0x50, 4), 0x04);
+        byte[] fourCcBytes = System.Text.Encoding.ASCII.GetBytes("DXT1");
+        Array.Copy(fourCcBytes, 0, buffer, 0x54, 4);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(0x6C, 4), 0x1000);
+        return buffer;
+    }
 
     [Fact]
     public void BuildWritePlan_AggregatesFullResourceSet_AndGeneratesAssemblyReport()
@@ -85,7 +101,7 @@ public class DecorativeObjectPackageWriterTests
         var rsltId = new PackageResourceId(0xD3044521, 0, 4);
 
         var meshBundle = new DecorativeObjectMeshInputBundle(meshId, meshId.FormattedKey, CreateMesh(), new byte[] { 0x01, 0x02, 0x03, 0x04 });
-        var texAsset = new DecorativeObjectSourceTextureAsset(texId.FormattedKey, texId, TextureClassificationKind.KnownTexture, TextureMapKind.Diffuse, "DDS", true, Array.Empty<ConversionIssue>(), CreateEntry(texId), new byte[] { 0x44, 0x44, 0x53, 0x20 });
+        var texAsset = new DecorativeObjectSourceTextureAsset(texId.FormattedKey, texId, TextureClassificationKind.KnownTexture, TextureMapKind.Diffuse, "DDS", true, Array.Empty<ConversionIssue>(), CreateEntry(texId), CreateValidDdsPayload());
 
         var rigRow = PackageResourceRow.FromEntry(CreateZeroByteEntry(rigId));
         var rsltRow = PackageResourceRow.FromEntry(CreateZeroByteEntry(rsltId));
@@ -107,13 +123,13 @@ public class DecorativeObjectPackageWriterTests
         var plan = planBuilder.BuildWritePlan(bundle);
 
         plan.IsPlanValid.Should().BeTrue();
-        plan.PlannedResources.Should().HaveCount(9, "Includes 4 input resources + 5 generated TS4 object resources.");
+        plan.PlannedResources.Should().HaveCount(10, "Includes 3 input resources + 7 generated TS4 object resources (including OBJD and converted RLE2).");
         plan.ResourceSetReport.Should().NotBeNull();
         plan.ResourceSetReport!.MeshCount.Should().Be(1);
         plan.ResourceSetReport.TextureCount.Should().Be(1);
         plan.ResourceSetReport.RigCount.Should().Be(1);
         plan.ResourceSetReport.RsltCount.Should().Be(1);
-        plan.ResourceSetReport.TotalResourceCount.Should().Be(9);
+        plan.ResourceSetReport.TotalResourceCount.Should().Be(10);
     }
 
     [Fact]
@@ -268,7 +284,7 @@ public class DecorativeObjectPackageWriterTests
         var texId = new PackageResourceId(0x00B2D882, 0, 200);
 
         var meshBundle = new DecorativeObjectMeshInputBundle(meshId, meshId.FormattedKey, CreateMesh(), new byte[] { 0x01, 0x02, 0x03, 0x04 });
-        var texAsset = new DecorativeObjectSourceTextureAsset(texId.FormattedKey, texId, TextureClassificationKind.KnownTexture, TextureMapKind.Diffuse, "DDS", true, Array.Empty<ConversionIssue>(), CreateEntry(texId), new byte[] { 0x44, 0x44, 0x53, 0x20 });
+        var texAsset = new DecorativeObjectSourceTextureAsset(texId.FormattedKey, texId, TextureClassificationKind.KnownTexture, TextureMapKind.Diffuse, "DDS", true, Array.Empty<ConversionIssue>(), CreateEntry(texId), CreateValidDdsPayload());
 
         var bundle = new DecorativeObjectConversionInputBundle(
             SourcePackagePath: "source_onyx.package",

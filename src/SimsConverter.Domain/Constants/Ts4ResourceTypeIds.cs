@@ -44,4 +44,14 @@ public static class Ts4ResourceTypeIds
     /// Shared Slot Layout Resource (RSLT). TypeId: 0xD3044521.
     /// </summary>
     public const uint Slot = 0xD3044521;
+
+    /// <summary>
+    /// TS4 RLE2 Texture Resource (RLE2). TypeId: 0x3453CF95.
+    /// </summary>
+    public const uint Rle2Texture = 0x3453CF95;
+
+    /// <summary>
+    /// TS4 LRLE Texture Resource (LRLE). TypeId: 0x2BC04EDF.
+    /// </summary>
+    public const uint LrleTexture = 0x2BC04EDF;
 }

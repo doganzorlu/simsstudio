@@ -121,16 +121,36 @@ public class MeshInspectionService : IMeshInspectionService
                         if (classification.DetectedGameVersion == GameVersion.Sims4)
                         {
                             var importResult = _ts4GeomImporter.Import(payloadResult.Payload, entry.Id.FormattedKey);
-                            importSuccess = importResult.IsSuccess;
-                            mesh = importResult.Mesh;
-                            importIssues = importResult.Issues;
+                            if (importResult.IsSuccess)
+                            {
+                                importSuccess = true;
+                                mesh = importResult.Mesh;
+                                importIssues = importResult.Issues;
+                            }
+                            else
+                            {
+                                var fallbackResult = _ts3GeomImporter.Import(payloadResult.Payload, entry.Id.FormattedKey);
+                                importSuccess = fallbackResult.IsSuccess;
+                                mesh = fallbackResult.Mesh;
+                                importIssues = fallbackResult.Issues;
+                            }
                         }
                         else
                         {
                             var importResult = _ts3GeomImporter.Import(payloadResult.Payload, entry.Id.FormattedKey);
-                            importSuccess = importResult.IsSuccess;
-                            mesh = importResult.Mesh;
-                            importIssues = importResult.Issues;
+                            if (importResult.IsSuccess)
+                            {
+                                importSuccess = true;
+                                mesh = importResult.Mesh;
+                                importIssues = importResult.Issues;
+                            }
+                            else
+                            {
+                                var fallbackResult = _ts4GeomImporter.Import(payloadResult.Payload, entry.Id.FormattedKey);
+                                importSuccess = fallbackResult.IsSuccess;
+                                mesh = fallbackResult.Mesh;
+                                importIssues = fallbackResult.Issues;
+                            }
                         }
 
                         if (importIssues != null && importIssues.Count > 0)

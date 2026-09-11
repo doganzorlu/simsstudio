@@ -120,8 +120,19 @@ public class DecorativeObjectPackageWritePlanBuilder : IDecorativeObjectPackageW
         {
             if (addedKeys.Add(meshBundle.FormattedKey))
             {
-                var payload = meshBundle.RawPayload ?? Array.Empty<byte>();
-                if (payload.Count == 0)
+                byte[] payload;
+                if (bundle.TargetGameVersion == GameVersion.Sims4 && meshBundle.CanonicalMesh != null && meshBundle.CanonicalMesh.Vertices.Count > 0)
+                {
+                    var geomId = meshBundle.ResourceId;
+                    var materialId = new PackageResourceId(SimsConverter.Domain.Constants.Ts4ResourceTypeIds.MaterialDefinition, 0, geomId.InstanceId);
+                    payload = SimsConverter.Mesh.Services.Ts4GeomPayloadBuilder.BuildGeomPayload(geomId, materialId, meshBundle.CanonicalMesh);
+                }
+                else
+                {
+                    payload = (meshBundle.RawPayload ?? Array.Empty<byte>()).ToArray();
+                }
+
+                if (payload.Length == 0)
                 {
                     issues.Add(new ConversionIssue(
                         "WRIT003",
@@ -131,7 +142,7 @@ public class DecorativeObjectPackageWritePlanBuilder : IDecorativeObjectPackageW
                     continue;
                 }
 
-                uint size = (uint)payload.Count;
+                uint size = (uint)payload.Length;
                 plannedResources.Add(new DecorativeObjectPackageWriteResourceEntry(
                     ResourceId: meshBundle.ResourceId,
                     FormattedKey: meshBundle.FormattedKey,
@@ -149,6 +160,16 @@ public class DecorativeObjectPackageWritePlanBuilder : IDecorativeObjectPackageW
         {
             foreach (var texAsset in bundle.TextureAssets)
             {
+                bool alreadyGenerated = generatedList != null && generatedList.Any(g =>
+                    g.ResourceId.InstanceId == texAsset.ResourceId.InstanceId &&
+                    (g.ResourceId.TypeId == 0x3453CF95u || g.ResourceId.TypeId == 0x00B2D882u || g.ResourceId == texAsset.ResourceId));
+
+                if (alreadyGenerated)
+                {
+                    textureCount++;
+                    continue;
+                }
+
                 if (addedKeys.Add(texAsset.FormattedKey))
                 {
                     IReadOnlyList<byte>? payload = texAsset.RawPayload;
@@ -192,6 +213,9 @@ public class DecorativeObjectPackageWritePlanBuilder : IDecorativeObjectPackageW
         {
             foreach (var rigRow in bundle.RigResources)
             {
+                bool alreadyGenerated = generatedList != null && generatedList.Any(g => g.ResourceId.TypeId == rigRow.TypeId);
+                if (alreadyGenerated) continue;
+
                 if (addedKeys.Add(rigRow.FormattedKey))
                 {
                     var entry = rigRow.ToEntry();
@@ -236,6 +260,9 @@ public class DecorativeObjectPackageWritePlanBuilder : IDecorativeObjectPackageW
         {
             foreach (var rsltRow in bundle.RsltResources)
             {
+                bool alreadyGenerated = generatedList != null && generatedList.Any(g => g.ResourceId.TypeId == rsltRow.TypeId);
+                if (alreadyGenerated) continue;
+
                 if (addedKeys.Add(rsltRow.FormattedKey))
                 {
                     var entry = rsltRow.ToEntry();

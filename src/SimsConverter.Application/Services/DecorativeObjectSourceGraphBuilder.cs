@@ -22,17 +22,20 @@ public class DecorativeObjectSourceGraphBuilder : IDecorativeObjectSourceGraphBu
     private readonly IMeshInspectionService _meshInspectionService;
     private readonly ITextureInspectionService _textureInspectionService;
     private readonly ITs3ObjectModelDecompositionService? _decompositionService;
+    private readonly ITs3CatalogMetadataReader _catalogMetadataReader;
 
     public DecorativeObjectSourceGraphBuilder(
         IPackageInspectionService packageInspectionService,
         IMeshInspectionService meshInspectionService,
         ITextureInspectionService textureInspectionService,
-        ITs3ObjectModelDecompositionService? decompositionService = null)
+        ITs3ObjectModelDecompositionService? decompositionService = null,
+        ITs3CatalogMetadataReader? catalogMetadataReader = null)
     {
         _packageInspectionService = packageInspectionService ?? throw new ArgumentNullException(nameof(packageInspectionService));
         _meshInspectionService = meshInspectionService ?? throw new ArgumentNullException(nameof(meshInspectionService));
         _textureInspectionService = textureInspectionService ?? throw new ArgumentNullException(nameof(textureInspectionService));
         _decompositionService = decompositionService;
+        _catalogMetadataReader = catalogMetadataReader ?? new Ts3CatalogMetadataReader();
     }
 
     public async Task<DecorativeObjectSourceAssetGraph> BuildGraphAsync(
@@ -236,6 +239,21 @@ public class DecorativeObjectSourceGraphBuilder : IDecorativeObjectSourceGraphBu
 
         meshAssets.Sort((a, b) => string.Compare(a.FormattedKey, b.FormattedKey, StringComparison.Ordinal));
 
+        var catalogMetadata = _catalogMetadataReader.ReadCatalogMetadata(
+            sourcePath,
+            packageInspection.Resources ?? Array.Empty<PackageResourceRow>(),
+            Path.GetFileNameWithoutExtension(sourcePath)
+        );
+
+        if (catalogMetadata.IsDefaultFallback)
+        {
+            issues.Add(new ConversionIssue(
+                "CATL001",
+                "Source package missing real TS3 catalog metadata; fallback catalog metadata (Price=100, Placement=Floor/Surface) applied.",
+                ConversionIssueSeverity.Warning
+            ));
+        }
+
         return new DecorativeObjectSourceAssetGraph(
             SourcePackagePath: sourcePath,
             TotalResourceCount: packageInspection.Resources?.Count ?? 0,
@@ -247,7 +265,8 @@ public class DecorativeObjectSourceGraphBuilder : IDecorativeObjectSourceGraphBu
             HasTextureCandidates: hasTextureCandidates,
             IsSourceGraphReady: isSourceGraphReady,
             Issues: issues.AsReadOnly(),
-            ObjectModelDecomposition: objectModelDecomposition
+            ObjectModelDecomposition: objectModelDecomposition,
+            CatalogMetadata: catalogMetadata
         );
     }
 

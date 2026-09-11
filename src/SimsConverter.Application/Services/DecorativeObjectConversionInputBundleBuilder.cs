@@ -9,6 +9,7 @@ using SimsConverter.Domain.Contracts;
 using SimsConverter.Domain.Enums;
 using SimsConverter.Domain.Models;
 using SimsConverter.Mesh.Contracts;
+using SimsConverter.Mesh.Services;
 using SimsConverter.Package.Contracts;
 
 namespace SimsConverter.Application.Services;
@@ -21,18 +22,21 @@ public class DecorativeObjectConversionInputBundleBuilder : IDecorativeObjectCon
     private readonly IPackageResourcePayloadReader _payloadReader;
     private readonly ITs3GeomCanonicalMeshImporter _ts3GeomImporter;
     private readonly ITs4GeomCanonicalMeshImporter _ts4GeomImporter;
+    private readonly ITs3MlodGeometryDecoder _ts3MlodDecoder;
     private readonly ICanonicalMeshValidator _meshValidator;
 
     public DecorativeObjectConversionInputBundleBuilder(
         IPackageResourcePayloadReader payloadReader,
         ITs3GeomCanonicalMeshImporter ts3GeomImporter,
         ICanonicalMeshValidator meshValidator,
-        ITs4GeomCanonicalMeshImporter? ts4GeomImporter = null)
+        ITs4GeomCanonicalMeshImporter? ts4GeomImporter = null,
+        ITs3MlodGeometryDecoder? ts3MlodDecoder = null)
     {
         _payloadReader = payloadReader ?? throw new ArgumentNullException(nameof(payloadReader));
         _ts3GeomImporter = ts3GeomImporter ?? throw new ArgumentNullException(nameof(ts3GeomImporter));
         _meshValidator = meshValidator ?? throw new ArgumentNullException(nameof(meshValidator));
         _ts4GeomImporter = ts4GeomImporter ?? new Mesh.Services.Ts4GeomCanonicalMeshImporter(new Mesh.Services.Ts4GeomMetadataReader(), _meshValidator);
+        _ts3MlodDecoder = ts3MlodDecoder ?? new Mesh.Services.Ts3MlodGeometryDecoder(_meshValidator);
     }
 
     public async Task<DecorativeObjectConversionInputBundle> BuildBundleAsync(
@@ -174,6 +178,11 @@ public class DecorativeObjectConversionInputBundleBuilder : IDecorativeObjectCon
                 }
             }
 
+            if (!lodIndex.HasValue)
+            {
+                lodIndex = entry.Id.GroupId;
+            }
+
             meshBundles.Add(new DecorativeObjectMeshInputBundle(
                 ResourceId: meshAsset.ResourceId,
                 FormattedKey: meshAsset.FormattedKey,
@@ -183,6 +192,70 @@ public class DecorativeObjectConversionInputBundleBuilder : IDecorativeObjectCon
                 AssociatedGroupIndex: groupIndex,
                 MaterialReferenceKey: materialRefKey,
                 Issues: meshAsset.Issues
+            ));
+        }
+
+        if (meshBundles.Count == 0 && hasObjectModel)
+        {
+            var modelRows = new List<PackageResourceRow>();
+
+            if (sourceGraph.ObjectModelDecomposition != null)
+            {
+                if (sourceGraph.ObjectModelDecomposition.MlodResources != null)
+                    modelRows.AddRange(sourceGraph.ObjectModelDecomposition.MlodResources);
+                if (sourceGraph.ObjectModelDecomposition.ModlResources != null)
+                    modelRows.AddRange(sourceGraph.ObjectModelDecomposition.ModlResources);
+            }
+
+            if (sourceGraph.OtherResources != null)
+            {
+                foreach (var r in sourceGraph.OtherResources)
+                {
+                    if ((r.TypeId == 0x01661233 || r.TypeId == 0x01D10F34) &&
+                        !modelRows.Any(e => e.FormattedKey.Equals(r.FormattedKey, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        modelRows.Add(r);
+                    }
+                }
+            }
+
+            uint lodIdxCounter = 0;
+            foreach (var modelRow in modelRows)
+            {
+                var entry = modelRow.ToEntry();
+                var payloadResult = _payloadReader.ReadPayload(sourcePackagePath, entry);
+                if (!payloadResult.IsSuccess || payloadResult.Payload == null) continue;
+
+                var decodeResult = _ts3MlodDecoder.Decode(payloadResult.Payload, modelRow.FormattedKey);
+                if (decodeResult.IsSuccess && decodeResult.Mesh != null)
+                {
+                    var geomResourceId = new PackageResourceId(
+                        SimsConverter.Domain.Constants.Ts4ResourceTypeIds.Geom,
+                        modelRow.GroupId,
+                        modelRow.InstanceId != 0 ? modelRow.InstanceId : (ulong)lodIdxCounter + 1
+                    );
+
+                    meshBundles.Add(new DecorativeObjectMeshInputBundle(
+                        ResourceId: geomResourceId,
+                        FormattedKey: geomResourceId.FormattedKey,
+                        CanonicalMesh: decodeResult.Mesh,
+                        RawPayload: Array.AsReadOnly(payloadResult.Payload.ToArray()),
+                        AssociatedLodIndex: lodIdxCounter++,
+                        AssociatedGroupIndex: 0,
+                        MaterialReferenceKey: "MLOD_Extracted",
+                        Issues: decodeResult.Issues
+                    ));
+                }
+            }
+        }
+
+        if (meshBundles.Count == 0)
+        {
+            isBundleValid = false;
+            issues.Add(new ConversionIssue(
+                "CONVG007",
+                "No valid geometry data could be extracted from source package (neither TS3 GEOM resources nor embedded MODL/MLOD mesh streams were found).",
+                ConversionIssueSeverity.Error
             ));
         }
 
@@ -218,6 +291,24 @@ public class DecorativeObjectConversionInputBundleBuilder : IDecorativeObjectCon
                 else if (r.TypeId == RsltTypeId && !rsltResources.Any(existing => existing.FormattedKey.Equals(r.FormattedKey, StringComparison.OrdinalIgnoreCase)))
                 {
                     rsltResources.Add(r);
+                }
+            }
+        }
+
+        if (sourceGraph.MeshAssets != null)
+        {
+            foreach (var m in sourceGraph.MeshAssets)
+            {
+                if (m.Entry != null)
+                {
+                    if (m.ResourceId.TypeId == RigTypeId && !rigResources.Any(existing => existing.FormattedKey.Equals(m.FormattedKey, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        rigResources.Add(PackageResourceRow.FromEntry(m.Entry));
+                    }
+                    else if (m.ResourceId.TypeId == RsltTypeId && !rsltResources.Any(existing => existing.FormattedKey.Equals(m.FormattedKey, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        rsltResources.Add(PackageResourceRow.FromEntry(m.Entry));
+                    }
                 }
             }
         }
@@ -284,7 +375,8 @@ public class DecorativeObjectConversionInputBundleBuilder : IDecorativeObjectCon
             ResourceLinks: resourceLinks,
             IsBundleValid: isBundleValid && (meshBundles.Count > 0 || hasObjectModel),
             Issues: issues.AsReadOnly(),
-            OtherResources: sourceGraph.OtherResources
+            OtherResources: sourceGraph.OtherResources,
+            CatalogMetadata: sourceGraph.CatalogMetadata
         );
     }
 
@@ -307,7 +399,8 @@ public class DecorativeObjectConversionInputBundleBuilder : IDecorativeObjectCon
             ResourceLinks: sourceGraph?.ResourceLinks ?? Array.Empty<DecorativeObjectSourceResourceLink>(),
             IsBundleValid: false,
             Issues: issues.AsReadOnly(),
-            OtherResources: sourceGraph?.OtherResources
+            OtherResources: sourceGraph?.OtherResources,
+            CatalogMetadata: sourceGraph?.CatalogMetadata
         );
     }
 }

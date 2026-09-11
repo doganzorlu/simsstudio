@@ -162,4 +162,42 @@ public class DecorativeObjectConversionCapabilityServiceTests
         matrix.UnsupportedResourceCount.Should().Be(0);
         matrix.Issues.Should().BeEmpty();
     }
+
+    [Fact]
+    public void EvaluateCapability_GivenSims3SpecificTargetTypeIds_ClassifiesAsUnsupported_AndProvidesHumanReadableWarningNames()
+    {
+        // Arrange: 0x736884F1 (Footprint), 0x03B4C61D (Model RCOL Header), 0x033A1435 (Design Mode Preset)
+        var resources = new List<PackageResourceRow>
+        {
+            CreateRow(Ts4ResourceTypeIds.CatalogObject, 1),
+            CreateRow(0x736884F1, 2),
+            CreateRow(0x03B4C61D, 3),
+            CreateRow(0x033A1435, 4)
+        };
+
+        var packageResult = new PackageInspectionResult(
+            IsSuccess: true,
+            FilePath: "ts3_specific_types.package",
+            Header: null,
+            Resources: resources,
+            Issues: Array.Empty<ConversionIssue>()
+        );
+
+        // Act
+        var matrix = _service.EvaluateCapability(packageResult, GameVersion.Sims3, GameVersion.Sims4);
+
+        // Assert
+        matrix.TotalResourcesAnalyzed.Should().Be(4);
+        matrix.SupportedResourceCount.Should().Be(1);
+        matrix.UnsupportedResourceCount.Should().Be(3);
+        matrix.Issues.Should().HaveCount(3);
+
+        matrix.Issues.Should().Contain(i => i.Code == "CAPA001" && i.Message.Contains("Footprint (FTPT 0x736884F1)"));
+        matrix.Issues.Should().Contain(i => i.Code == "CAPA001" && i.Message.Contains("Model RCOL Header (0x03B4C61D)"));
+        matrix.Issues.Should().Contain(i => i.Code == "CAPA001" && i.Message.Contains("Design Mode Preset (0x033A1435)"));
+
+        matrix.Entries.Should().Contain(e => e.TypeId == 0x736884F1 && e.CapabilityStatus == ConversionCapabilityStatus.Unsupported);
+        matrix.Entries.Should().Contain(e => e.TypeId == 0x03B4C61D && e.CapabilityStatus == ConversionCapabilityStatus.Unsupported);
+        matrix.Entries.Should().Contain(e => e.TypeId == 0x033A1435 && e.CapabilityStatus == ConversionCapabilityStatus.Unsupported);
+    }
 }

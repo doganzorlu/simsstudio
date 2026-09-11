@@ -9,15 +9,22 @@ using SimsConverter.Domain.Constants;
 using SimsConverter.Domain.Enums;
 using SimsConverter.Domain.Models;
 
+using SimsConverter.Textures.Contracts;
+using SimsConverter.Textures.Services;
+
 namespace SimsConverter.Application.Services;
 
 public class DecorativeObjectTs4ResourceGenerator : IDecorativeObjectTs4ResourceGenerator
 {
     private readonly IDecorativeObjectTs4IdentityGenerator _identityGenerator;
+    private readonly ITs4Rle2TexturePayloadBuilder _rle2PayloadBuilder;
 
-    public DecorativeObjectTs4ResourceGenerator(IDecorativeObjectTs4IdentityGenerator? identityGenerator = null)
+    public DecorativeObjectTs4ResourceGenerator(
+        IDecorativeObjectTs4IdentityGenerator? identityGenerator = null,
+        ITs4Rle2TexturePayloadBuilder? rle2PayloadBuilder = null)
     {
         _identityGenerator = identityGenerator ?? new DecorativeObjectTs4IdentityGenerator();
+        _rle2PayloadBuilder = rle2PayloadBuilder ?? new Ts4Rle2TexturePayloadBuilder();
     }
 
     public Ts4ResourceGenerationResult GenerateResources(DecorativeObjectConversionInputBundle bundle)
@@ -39,9 +46,9 @@ public class DecorativeObjectTs4ResourceGenerator : IDecorativeObjectTs4Resource
             );
         }
 
-        string seedBase = !string.IsNullOrEmpty(bundle.SourcePackagePath)
-            ? Path.GetFileNameWithoutExtension(bundle.SourcePackagePath)
-            : (bundle.MeshBundles != null && bundle.MeshBundles.Count > 0 ? bundle.MeshBundles[0].FormattedKey : "DecomposedObject");
+        string seedBase = bundle.MeshBundles != null && bundle.MeshBundles.Count > 0
+            ? bundle.MeshBundles[0].ResourceId.InstanceId.ToString("X16")
+            : (!string.IsNullOrEmpty(bundle.SourcePackagePath) ? Path.GetFileNameWithoutExtension(bundle.SourcePackagePath) : "DecomposedObject");
 
         PackageResourceRow? firstModlRow = bundle.ObjectModelDecomposition?.ModlResources?.FirstOrDefault()
             ?? bundle.OtherResources?.FirstOrDefault(r => r.TypeId == 0x01661233 || r.TypeId == 0x319E4F1D);
@@ -52,13 +59,22 @@ public class DecorativeObjectTs4ResourceGenerator : IDecorativeObjectTs4Resource
 
         // Deterministic Identity Generation
         var cobjId = _identityGenerator.MapResourceIdentity(primaryMeshId, Ts4ResourceTypeIds.CatalogObject);
+        var objdId = _identityGenerator.MapResourceIdentity(primaryMeshId, Ts4ResourceTypeIds.ObjectDefinition);
         var modlId = _identityGenerator.MapResourceIdentity(primaryMeshId, Ts4ResourceTypeIds.Model);
         var mlodL0Id = _identityGenerator.GenerateDeterministicResourceId(Ts4ResourceTypeIds.ModelLod, seedBase + "_MLOD_LOD0");
         var mlodL1Id = _identityGenerator.GenerateDeterministicResourceId(Ts4ResourceTypeIds.ModelLod, seedBase + "_MLOD_LOD1");
         var materialId = _identityGenerator.GenerateDeterministicResourceId(Ts4ResourceTypeIds.MaterialDefinition, seedBase + "_Material_0");
 
-        // Verify Texture References
-        var verifiedTextures = new List<DecorativeObjectSourceTextureAsset>();
+        PackageResourceId? rigId = bundle.RigResources != null && bundle.RigResources.Count > 0
+            ? new PackageResourceId(bundle.RigResources[0].TypeId, bundle.RigResources[0].GroupId, bundle.RigResources[0].InstanceId)
+            : null;
+
+        PackageResourceId? rsltId = bundle.RsltResources != null && bundle.RsltResources.Count > 0
+            ? new PackageResourceId(bundle.RsltResources[0].TypeId, bundle.RsltResources[0].GroupId, bundle.RsltResources[0].InstanceId)
+            : null;
+
+        // Verify & Convert Texture References to TS4 RLE2 Payloads
+        var convertedTextureIds = new List<PackageResourceId>();
         if (bundle.TextureAssets != null)
         {
             foreach (var tex in bundle.TextureAssets)
@@ -73,7 +89,32 @@ public class DecorativeObjectTs4ResourceGenerator : IDecorativeObjectTs4Resource
                     continue;
                 }
 
-                verifiedTextures.Add(tex);
+                // Map TS3 DDS identity (0x00B2D882) to TS4 RLE2 identity (0x3453CF95)
+                var rle2Id = _identityGenerator.MapResourceIdentity(tex.ResourceId, Ts4ResourceTypeIds.Rle2Texture);
+                convertedTextureIds.Add(rle2Id);
+
+                if (tex.RawPayload != null && tex.RawPayload.Count > 0)
+                {
+                    byte[] ddsBytes = tex.RawPayload.ToArray();
+                    var rle2Result = _rle2PayloadBuilder.BuildPayload(ddsBytes, tex.FormattedKey);
+
+                    if (rle2Result.IsSuccess && rle2Result.Payload != null)
+                    {
+                        generatedResources.Add(CreateResourceEntry(rle2Id, rle2Result.Payload));
+                    }
+                    else
+                    {
+                        issues.Add(new ConversionIssue(
+                            "TEXR005",
+                            $"RLE2 texture payload building failed for texture asset '{tex.FormattedKey}'.",
+                            ConversionIssueSeverity.Warning
+                        ));
+                        if (rle2Result.Issues != null)
+                        {
+                            issues.AddRange(rle2Result.Issues);
+                        }
+                    }
+                }
             }
         }
 
@@ -83,16 +124,18 @@ public class DecorativeObjectTs4ResourceGenerator : IDecorativeObjectTs4Resource
         {
             foreach (var mesh in bundle.MeshBundles)
             {
-                if (!string.IsNullOrEmpty(mesh.MaterialReferenceKey) && mesh.MaterialReferenceKey.Contains("Heuristic", StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(mesh.MaterialReferenceKey) && mesh.MaterialReferenceKey.Contains("Unverified", StringComparison.OrdinalIgnoreCase))
                 {
                     issues.Add(new ConversionIssue(
                         "IDEN001",
-                        $"Unverified or heuristic material reference '{mesh.MaterialReferenceKey}' was rejected during TS4 identity assembly.",
+                        $"Unverified or heuristic material reference '{mesh.MaterialReferenceKey}' reported during TS4 identity assembly.",
                         ConversionIssueSeverity.Warning
                     ));
-                    continue;
                 }
-                verifiedMeshBundles.Add(mesh);
+                else
+                {
+                    verifiedMeshBundles.Add(mesh);
+                }
             }
         }
 
@@ -111,22 +154,30 @@ public class DecorativeObjectTs4ResourceGenerator : IDecorativeObjectTs4Resource
         }
 
         // 1. Material Resource Payload (RMAT)
-        var matPayload = BuildMaterialPayload(materialId, verifiedTextures, verifiedLinks);
+        var matPayload = BuildMaterialPayload(materialId, convertedTextureIds, verifiedLinks);
         generatedResources.Add(CreateResourceEntry(materialId, matPayload));
 
         // 2. MLOD LOD0 & LOD1 Resource Payloads
-        var mlodL0Payload = BuildModelLodPayload(mlodL0Id, 0, verifiedMeshBundles, materialId, verifiedLinks);
+        var lod0Meshes = verifiedMeshBundles.Where(m => !m.AssociatedLodIndex.HasValue || m.AssociatedLodIndex.Value == 0).ToList();
+        var lod1Meshes = verifiedMeshBundles.Where(m => !m.AssociatedLodIndex.HasValue || m.AssociatedLodIndex.Value == 1).ToList();
+        if (lod1Meshes.Count == 0 && lod0Meshes.Count > 0) lod1Meshes = lod0Meshes;
+
+        var mlodL0Payload = BuildModelLodPayload(mlodL0Id, 0, lod0Meshes, materialId, verifiedLinks);
         generatedResources.Add(CreateResourceEntry(mlodL0Id, mlodL0Payload));
 
-        var mlodL1Payload = BuildModelLodPayload(mlodL1Id, 1, verifiedMeshBundles, materialId, verifiedLinks);
+        var mlodL1Payload = BuildModelLodPayload(mlodL1Id, 1, lod1Meshes, materialId, verifiedLinks);
         generatedResources.Add(CreateResourceEntry(mlodL1Id, mlodL1Payload));
 
         // 3. MODL Resource Payload
         var modlPayload = BuildModelPayload(modlId, mlodL0Id, mlodL1Id, verifiedLinks);
         generatedResources.Add(CreateResourceEntry(modlId, modlPayload));
 
-        // 4. COBJ Catalog Object Resource Payload
-        var cobjPayload = BuildCatalogObjectPayload(cobjId, modlId, verifiedLinks);
+        // 4. OBJD Object Definition Resource Payload
+        var objdPayload = BuildObjectDefinitionPayload(objdId, modlId, rigId, rsltId, verifiedLinks, bundle.CatalogMetadata);
+        generatedResources.Add(CreateResourceEntry(objdId, objdPayload));
+
+        // 5. COBJ Catalog Object Resource Payload
+        var cobjPayload = BuildCatalogObjectPayload(cobjId, objdId, verifiedLinks);
         generatedResources.Add(CreateResourceEntry(cobjId, cobjPayload));
 
         return new Ts4ResourceGenerationResult(
@@ -149,7 +200,7 @@ public class DecorativeObjectTs4ResourceGenerator : IDecorativeObjectTs4Resource
         );
     }
 
-    private static byte[] BuildCatalogObjectPayload(PackageResourceId cobjId, PackageResourceId modlId, List<DecorativeObjectSourceResourceLink> links)
+    private static byte[] BuildCatalogObjectPayload(PackageResourceId cobjId, PackageResourceId objdId, List<DecorativeObjectSourceResourceLink> links)
     {
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms, Encoding.UTF8);
@@ -158,12 +209,79 @@ public class DecorativeObjectTs4ResourceGenerator : IDecorativeObjectTs4Resource
         writer.Write(Encoding.ASCII.GetBytes("COBJ"));
         writer.Write((uint)1); // Version 1
 
+        // Reference to OBJD
+        writer.Write(objdId.TypeId);
+        writer.Write(objdId.GroupId);
+        writer.Write(objdId.InstanceId);
+
+        links.Add(new DecorativeObjectSourceResourceLink(cobjId.FormattedKey, objdId.FormattedKey, "COBJ_To_OBJD"));
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildObjectDefinitionPayload(
+        PackageResourceId objdId,
+        PackageResourceId modlId,
+        PackageResourceId? rigId,
+        PackageResourceId? rsltId,
+        List<DecorativeObjectSourceResourceLink> links,
+        ObjectCatalogMetadata? catalogMetadata = null)
+    {
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms, Encoding.UTF8);
+
+        // Header magic: 'OBJD'
+        writer.Write(Encoding.ASCII.GetBytes("OBJD"));
+        writer.Write((uint)1); // Version 1
+
         // Reference to MODL
         writer.Write(modlId.TypeId);
         writer.Write(modlId.GroupId);
         writer.Write(modlId.InstanceId);
+        links.Add(new DecorativeObjectSourceResourceLink(objdId.FormattedKey, modlId.FormattedKey, "OBJD_To_MODL"));
 
-        links.Add(new DecorativeObjectSourceResourceLink(cobjId.FormattedKey, modlId.FormattedKey, "COBJ_To_MODL"));
+        // Reference to RIG
+        if (rigId != null && rigId.TypeId != 0)
+        {
+            writer.Write(rigId.TypeId);
+            writer.Write(rigId.GroupId);
+            writer.Write(rigId.InstanceId);
+            links.Add(new DecorativeObjectSourceResourceLink(objdId.FormattedKey, rigId.FormattedKey, "OBJD_To_RIG"));
+        }
+        else
+        {
+            writer.Write((uint)0);
+            writer.Write((uint)0);
+            writer.Write((ulong)0);
+        }
+
+        // Reference to RSLT
+        if (rsltId != null && rsltId.TypeId != 0)
+        {
+            writer.Write(rsltId.TypeId);
+            writer.Write(rsltId.GroupId);
+            writer.Write(rsltId.InstanceId);
+            links.Add(new DecorativeObjectSourceResourceLink(objdId.FormattedKey, rsltId.FormattedKey, "OBJD_To_RSLT"));
+        }
+        else
+        {
+            writer.Write((uint)0);
+            writer.Write((uint)0);
+            writer.Write((ulong)0);
+        }
+
+        // Placement flags & Footprint metadata
+        uint placementFlags = catalogMetadata?.PlacementFlags ?? 0x00000001;
+        uint footprintHash = catalogMetadata?.FootprintHash ?? 0x00000000;
+        uint price = catalogMetadata?.Price ?? 100;
+        uint catalogGroup = catalogMetadata?.CatalogGroup ?? 0;
+
+        writer.Write(placementFlags); // PlacementFlags
+        writer.Write(footprintHash);  // FootprintHash
+
+        // Price & Catalog metadata
+        writer.Write(price);          // Price Simoleons
+        writer.Write(catalogGroup);   // CatalogGroup
+
         return ms.ToArray();
     }
 
@@ -202,13 +320,19 @@ public class DecorativeObjectTs4ResourceGenerator : IDecorativeObjectTs4Resource
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms, Encoding.UTF8);
 
+        var targetMeshes = meshes.Where(m => m.AssociatedLodIndex == lodIndex).ToList();
+        if (targetMeshes.Count == 0)
+        {
+            targetMeshes = meshes;
+        }
+
         // Header magic: 'MLOD'
         writer.Write(Encoding.ASCII.GetBytes("MLOD"));
         writer.Write((uint)1); // Version 1
         writer.Write(lodIndex);
-        writer.Write((uint)meshes.Count);
+        writer.Write((uint)targetMeshes.Count);
 
-        foreach (var mesh in meshes)
+        foreach (var mesh in targetMeshes)
         {
             writer.Write(mesh.ResourceId.TypeId);
             writer.Write(mesh.ResourceId.GroupId);
@@ -217,7 +341,7 @@ public class DecorativeObjectTs4ResourceGenerator : IDecorativeObjectTs4Resource
         }
 
         // Material reference (only if verified meshes exist)
-        if (meshes.Count > 0)
+        if (targetMeshes.Count > 0)
         {
             writer.Write(materialId.TypeId);
             writer.Write(materialId.GroupId);
@@ -228,7 +352,7 @@ public class DecorativeObjectTs4ResourceGenerator : IDecorativeObjectTs4Resource
         return ms.ToArray();
     }
 
-    private static byte[] BuildMaterialPayload(PackageResourceId materialId, List<DecorativeObjectSourceTextureAsset> textures, List<DecorativeObjectSourceResourceLink> links)
+    private static byte[] BuildMaterialPayload(PackageResourceId materialId, List<PackageResourceId> textureIds, List<DecorativeObjectSourceResourceLink> links)
     {
         using var ms = new MemoryStream();
         using var writer = new BinaryWriter(ms, Encoding.UTF8);
@@ -236,14 +360,14 @@ public class DecorativeObjectTs4ResourceGenerator : IDecorativeObjectTs4Resource
         // Header magic: 'RMAT'
         writer.Write(Encoding.ASCII.GetBytes("RMAT"));
         writer.Write((uint)1); // Version 1
-        writer.Write((uint)textures.Count);
+        writer.Write((uint)textureIds.Count);
 
-        foreach (var tex in textures)
+        foreach (var texTargetId in textureIds)
         {
-            writer.Write(tex.ResourceId.TypeId);
-            writer.Write(tex.ResourceId.GroupId);
-            writer.Write(tex.ResourceId.InstanceId);
-            links.Add(new DecorativeObjectSourceResourceLink(materialId.FormattedKey, tex.FormattedKey, "Material_To_Texture"));
+            writer.Write(texTargetId.TypeId);
+            writer.Write(texTargetId.GroupId);
+            writer.Write(texTargetId.InstanceId);
+            links.Add(new DecorativeObjectSourceResourceLink(materialId.FormattedKey, texTargetId.FormattedKey, "Material_To_Texture"));
         }
 
         return ms.ToArray();

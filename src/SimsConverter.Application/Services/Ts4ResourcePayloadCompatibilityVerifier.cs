@@ -15,6 +15,8 @@ using SimsConverter.Mesh.Contracts;
 using SimsConverter.Mesh.Services;
 using SimsConverter.Package.Contracts;
 using SimsConverter.Package.Services;
+using SimsConverter.Textures.Contracts;
+using SimsConverter.Textures.Services;
 
 namespace SimsConverter.Application.Services;
 
@@ -22,13 +24,16 @@ public class Ts4ResourcePayloadCompatibilityVerifier : ITs4ResourcePayloadCompat
 {
     private readonly IPackageResourcePayloadReader _payloadReader;
     private readonly ITs4GeomCanonicalMeshImporter _ts4Importer;
+    private readonly ITs4Rle2TextureDecoder _rle2Decoder;
 
     public Ts4ResourcePayloadCompatibilityVerifier(
         IPackageResourcePayloadReader? payloadReader = null,
-        ITs4GeomCanonicalMeshImporter? ts4Importer = null)
+        ITs4GeomCanonicalMeshImporter? ts4Importer = null,
+        ITs4Rle2TextureDecoder? rle2Decoder = null)
     {
         _payloadReader = payloadReader ?? new PackageResourcePayloadReader();
         _ts4Importer = ts4Importer ?? new Ts4GeomCanonicalMeshImporter(new Ts4GeomMetadataReader(), new CanonicalMeshValidator());
+        _rle2Decoder = rle2Decoder ?? new Ts4Rle2TextureDecoder();
     }
 
     public async Task<Ts4PayloadCompatibilityResult> VerifyPackagePayloadsAsync(
@@ -79,6 +84,10 @@ public class Ts4ResourcePayloadCompatibilityVerifier : ITs4ResourcePayloadCompat
                     VerifyCatalogObjectPayload(entry, payload, indexKeys, issues, ref verifiedLinkCount);
                     break;
 
+                case Ts4ResourceTypeIds.ObjectDefinition: // OBJD 0xC0DB5AE7
+                    VerifyObjectDefinitionPayload(entry, payload, indexKeys, issues, ref verifiedLinkCount);
+                    break;
+
                 case Ts4ResourceTypeIds.Model: // MODL 0x01661233
                     VerifyModelPayload(entry, payload, indexKeys, issues, ref verifiedLinkCount);
                     break;
@@ -93,6 +102,10 @@ public class Ts4ResourcePayloadCompatibilityVerifier : ITs4ResourcePayloadCompat
 
                 case Ts4ResourceTypeIds.Geom: // GEOM 0x015A1849
                     VerifyGeomPayload(entry, payload, issues);
+                    break;
+
+                case Ts4ResourceTypeIds.Rle2Texture: // RLE2 0x3453CF95
+                    VerifyRle2TexturePayload(entry, payload, issues);
                     break;
             }
         }
@@ -109,6 +122,12 @@ public class Ts4ResourcePayloadCompatibilityVerifier : ITs4ResourcePayloadCompat
 
     private static void VerifyCatalogObjectPayload(PackageResourceEntry entry, byte[] payload, HashSet<string> indexKeys, List<ConversionIssue> issues, ref int linkCount)
     {
+        if (payload.Length >= 4 && Encoding.ASCII.GetString(payload, 0, 4) == "OBJD")
+        {
+            // TS3 OBJD resource sharing TypeId 0x319E4F1D with TS4 COBJ; skip TS4 COBJ layout check.
+            return;
+        }
+
         if (payload.Length < 24 || Encoding.ASCII.GetString(payload, 0, 4) != "COBJ")
         {
             issues.Add(new ConversionIssue("VAL001", $"Catalog Object resource {entry.Id.FormattedKey} payload header is invalid (expected magic 'COBJ').", ConversionIssueSeverity.Error));
@@ -119,14 +138,77 @@ public class Ts4ResourcePayloadCompatibilityVerifier : ITs4ResourcePayloadCompat
         uint groupId = BitConverter.ToUInt32(payload, 12);
         ulong instanceId = BitConverter.ToUInt64(payload, 16);
 
-        string modlKey = new PackageResourceId(typeId, groupId, instanceId).FormattedKey;
-        if (!indexKeys.Contains(modlKey))
+        string objdKey = new PackageResourceId(typeId, groupId, instanceId).FormattedKey;
+        if (!indexKeys.Contains(objdKey))
         {
-            issues.Add(new ConversionIssue("VAL001", $"COBJ resource {entry.Id.FormattedKey} references non-existent MODL TGI {modlKey} in package index.", ConversionIssueSeverity.Error));
+            issues.Add(new ConversionIssue("VAL001", $"COBJ resource {entry.Id.FormattedKey} references non-existent OBJD TGI {objdKey} in package index.", ConversionIssueSeverity.Error));
         }
         else
         {
             linkCount++;
+        }
+    }
+
+    private static void VerifyObjectDefinitionPayload(PackageResourceEntry entry, byte[] payload, HashSet<string> indexKeys, List<ConversionIssue> issues, ref int linkCount)
+    {
+        if (payload.Length < 24 || Encoding.ASCII.GetString(payload, 0, 4) != "OBJD")
+        {
+            issues.Add(new ConversionIssue("VAL007", $"Object Definition resource {entry.Id.FormattedKey} payload header is invalid (expected magic 'OBJD').", ConversionIssueSeverity.Error));
+            return;
+        }
+
+        uint modlTypeId = BitConverter.ToUInt32(payload, 8);
+        uint modlGroupId = BitConverter.ToUInt32(payload, 12);
+        ulong modlInstanceId = BitConverter.ToUInt64(payload, 16);
+
+        string modlKey = new PackageResourceId(modlTypeId, modlGroupId, modlInstanceId).FormattedKey;
+        if (!indexKeys.Contains(modlKey))
+        {
+            issues.Add(new ConversionIssue("VAL007", $"OBJD resource {entry.Id.FormattedKey} references non-existent MODL TGI {modlKey} in package index.", ConversionIssueSeverity.Error));
+        }
+        else
+        {
+            linkCount++;
+        }
+
+        if (payload.Length >= 40)
+        {
+            uint rigTypeId = BitConverter.ToUInt32(payload, 24);
+            uint rigGroupId = BitConverter.ToUInt32(payload, 28);
+            ulong rigInstanceId = BitConverter.ToUInt64(payload, 32);
+
+            if (rigTypeId != 0)
+            {
+                string rigKey = new PackageResourceId(rigTypeId, rigGroupId, rigInstanceId).FormattedKey;
+                if (!indexKeys.Contains(rigKey))
+                {
+                    issues.Add(new ConversionIssue("VAL007", $"OBJD resource {entry.Id.FormattedKey} references non-existent RIG TGI {rigKey} in package index.", ConversionIssueSeverity.Error));
+                }
+                else
+                {
+                    linkCount++;
+                }
+            }
+        }
+
+        if (payload.Length >= 56)
+        {
+            uint rsltTypeId = BitConverter.ToUInt32(payload, 40);
+            uint rsltGroupId = BitConverter.ToUInt32(payload, 44);
+            ulong rsltInstanceId = BitConverter.ToUInt64(payload, 48);
+
+            if (rsltTypeId != 0)
+            {
+                string rsltKey = new PackageResourceId(rsltTypeId, rsltGroupId, rsltInstanceId).FormattedKey;
+                if (!indexKeys.Contains(rsltKey))
+                {
+                    issues.Add(new ConversionIssue("VAL007", $"OBJD resource {entry.Id.FormattedKey} references non-existent RSLT TGI {rsltKey} in package index.", ConversionIssueSeverity.Error));
+                }
+                else
+                {
+                    linkCount++;
+                }
+            }
         }
     }
 
@@ -276,6 +358,19 @@ public class Ts4ResourcePayloadCompatibilityVerifier : ITs4ResourcePayloadCompat
             if (importResult.Issues != null)
             {
                 issues.AddRange(importResult.Issues.Where(i => i.Severity is ConversionIssueSeverity.Error or ConversionIssueSeverity.Fatal));
+            }
+        }
+    }
+
+    private void VerifyRle2TexturePayload(PackageResourceEntry entry, byte[] payload, List<ConversionIssue> issues)
+    {
+        var decodeResult = _rle2Decoder.Decode(payload, entry.Id.FormattedKey);
+        if (!decodeResult.IsSuccess)
+        {
+            issues.Add(new ConversionIssue("VAL006", $"RLE2 texture resource {entry.Id.FormattedKey} command stream decoding or payload validation failed.", ConversionIssueSeverity.Error));
+            if (decodeResult.Issues != null)
+            {
+                issues.AddRange(decodeResult.Issues.Where(i => i.Severity is ConversionIssueSeverity.Error or ConversionIssueSeverity.Fatal));
             }
         }
     }

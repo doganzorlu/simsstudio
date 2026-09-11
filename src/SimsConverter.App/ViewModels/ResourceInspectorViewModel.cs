@@ -139,6 +139,21 @@ public partial class ResourceInspectorViewModel : ObservableObject
     private string? _lastConvertedPackagePath;
 
     [ObservableProperty]
+    private string? _conversionObjectTitle;
+
+    [ObservableProperty]
+    private uint _conversionCatalogPrice;
+
+    [ObservableProperty]
+    private string? _conversionPlacementFlagsHex;
+
+    [ObservableProperty]
+    private string? _conversionFootprintHashHex;
+
+    [ObservableProperty]
+    private bool _conversionIsCatalogFallback;
+
+    [ObservableProperty]
     private DecorativeObjectConversionCapabilityMatrix? _capabilityMatrix;
 
     [ObservableProperty]
@@ -878,6 +893,16 @@ public partial class ResourceInspectorViewModel : ObservableObject
                     ConversionTotalPayloadBytes = meshBytes + texBytes + rigBytes + rsltBytes;
 
                     ConversionTotalResourceCount = 5 + ConversionMeshCount + ConversionTextureCount + ConversionRigCount + ConversionRsltCount;
+
+                    if (result.Plan.InputBundle.CatalogMetadata != null)
+                    {
+                        var meta = result.Plan.InputBundle.CatalogMetadata;
+                        ConversionObjectTitle = meta.ObjectTitle;
+                        ConversionCatalogPrice = meta.Price;
+                        ConversionPlacementFlagsHex = $"0x{meta.PlacementFlags:X8}";
+                        ConversionFootprintHashHex = $"0x{meta.FootprintHash:X8}";
+                        ConversionIsCatalogFallback = meta.IsDefaultFallback;
+                    }
                 }
                 else
                 {

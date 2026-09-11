@@ -14,5 +14,6 @@ public record DecorativeObjectSourceAssetGraph(
     bool HasTextureCandidates,
     bool IsSourceGraphReady,
     IReadOnlyList<ConversionIssue> Issues,
-    Ts3ObjectModelDecompositionResult? ObjectModelDecomposition = null
+    Ts3ObjectModelDecompositionResult? ObjectModelDecomposition = null,
+    ObjectCatalogMetadata? CatalogMetadata = null
 );

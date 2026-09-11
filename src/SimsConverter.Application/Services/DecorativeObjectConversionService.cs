@@ -387,42 +387,57 @@ public class DecorativeObjectConversionService : IDecorativeObjectConversionServ
                 );
             }
 
-            var compatResult = await _payloadVerifier.VerifyPackagePayloadsAsync(stagingTempPath, parseResult, cancellationToken).ConfigureAwait(false);
-
             var steps = new List<DecorativeObjectConversionStep>(planResult.Plan.Steps);
+            var verifierIssues = Array.Empty<ConversionIssue>();
 
-            if (!compatResult.IsSuccess)
+            if (request.TargetGameVersion == GameVersion.Sims4)
             {
-                CleanupStagingTempFile();
+                var compatResult = await _payloadVerifier.VerifyPackagePayloadsAsync(stagingTempPath, parseResult, cancellationToken).ConfigureAwait(false);
+                verifierIssues = compatResult.Issues.ToArray();
+
+                if (!compatResult.IsSuccess)
+                {
+                    CleanupStagingTempFile();
+
+                    steps.Add(new DecorativeObjectConversionStep(
+                        StepId: "STEP-08-EXEC-CONV",
+                        Title: "TS4 End-to-End Package Execution and Validation",
+                        Status: DecorativeObjectConversionStepStatus.Failed,
+                        Details: "TS4 output package payload compatibility verification failed.",
+                        Issues: compatResult.Issues
+                    ));
+
+                    var updatedPlanFailed = planResult.Plan with { Steps = steps.AsReadOnly() };
+                    return DecorativeObjectConversionResult.Failure(
+                        request.SourcePackagePath,
+                        finalTargetPath,
+                        "CONVE005",
+                        "Written TS4 package payload compatibility verification failed.",
+                        compatResult.Issues
+                    );
+                }
 
                 steps.Add(new DecorativeObjectConversionStep(
                     StepId: "STEP-08-EXEC-CONV",
                     Title: "TS4 End-to-End Package Execution and Validation",
-                    Status: DecorativeObjectConversionStepStatus.Failed,
-                    Details: "TS4 output package payload compatibility verification failed.",
-                    Issues: compatResult.Issues
+                    Status: DecorativeObjectConversionStepStatus.Completed,
+                    Details: $"TS4 package converted & verified successfully with {compatResult.TotalResourcesVerified} verified resources and {compatResult.VerifiedTgiLinkCount} verified TGI graph links.",
+                    Issues: Array.Empty<ConversionIssue>()
                 ));
-
-                var updatedPlanFailed = planResult.Plan with { Steps = steps.AsReadOnly() };
-                return DecorativeObjectConversionResult.Failure(
-                    request.SourcePackagePath,
-                    finalTargetPath,
-                    "CONVE005",
-                    "Written TS4 package payload compatibility verification failed.",
-                    compatResult.Issues
-                );
+            }
+            else
+            {
+                steps.Add(new DecorativeObjectConversionStep(
+                    StepId: "STEP-08-EXEC-CONV",
+                    Title: "TS3 Package Execution and Output Validation",
+                    Status: DecorativeObjectConversionStepStatus.Completed,
+                    Details: $"TS3 package written successfully with {parseResult.Entries.Count} resources.",
+                    Issues: Array.Empty<ConversionIssue>()
+                ));
             }
 
             // Commit Strategy: Move fully-verified staging file to final target output path atomically
             File.Move(stagingTempPath, finalTargetPath, overwrite: true);
-
-            steps.Add(new DecorativeObjectConversionStep(
-                StepId: "STEP-08-EXEC-CONV",
-                Title: "TS4 End-to-End Package Execution and Validation",
-                Status: DecorativeObjectConversionStepStatus.Completed,
-                Details: $"TS4 package converted & verified successfully with {compatResult.TotalResourcesVerified} verified resources and {compatResult.VerifiedTgiLinkCount} verified TGI graph links.",
-                Issues: Array.Empty<ConversionIssue>()
-            ));
 
             var updatedPlanSuccess = planResult.Plan with { Steps = steps.AsReadOnly() };
 
@@ -431,7 +446,7 @@ public class DecorativeObjectConversionService : IDecorativeObjectConversionServ
                 SourcePackagePath: request.SourcePackagePath,
                 TargetOutputPath: finalTargetPath,
                 Plan: updatedPlanSuccess,
-                Issues: planResult.Issues.Concat(compatResult.Issues).ToList().AsReadOnly()
+                Issues: planResult.Issues.Concat(verifierIssues).ToList().AsReadOnly()
             );
         }
         catch (Exception ex)

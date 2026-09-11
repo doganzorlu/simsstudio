@@ -28,6 +28,8 @@ public class DecorativeObjectConversionCapabilityService : IDecorativeObjectConv
         Ts4ResourceTypeIds.Slot,              // RSLT 0xD3044521
         0x05B47D14,                           // RSLT (Alt)
         0x00B2D882,                           // DDS / _IMG
+        0x3453CF95,                           // TS4 RLE2 Texture
+        0x2BC04EDF,                           // TS4 LRLE Texture
         0xDB43D069,                           // DDS (Alt)
         0x2F7D0004                            // Image Resource
     };
@@ -48,12 +50,14 @@ public class DecorativeObjectConversionCapabilityService : IDecorativeObjectConv
         { 0x02DC343F, "Object Definition (OBJD TS3)" },
         { Ts4ResourceTypeIds.Model, "Object Model (MODL)" },
         { Ts4ResourceTypeIds.ModelLod, "Model LOD (MLOD)" },
-        { Ts4ResourceTypeIds.Geom, "Geometry Mesh (GEOM TS4)" },
+        { Ts4ResourceTypeIds.Geom, "Geometry Mesh (GEOM TS4/TS3)" },
         { 0x015A182C, "Geometry Mesh (GEOM RCOL)" },
         { Ts4ResourceTypeIds.MaterialDefinition, "Material Definition (RMAT)" },
         { Ts4ResourceTypeIds.Rig, "Skeleton Rig (RIG)" },
         { Ts4ResourceTypeIds.Slot, "Slot Layout (RSLT)" },
         { 0x00B2D882, "Texture Image (_IMG/DDS)" },
+        { 0x3453CF95, "TS4 RLE2 Texture" },
+        { 0x2BC04EDF, "TS4 LRLE Texture" },
         { 0x220557DA, "String Table (STBL TS3)" },
         { 0x220557DB, "String Table (STBL TS4)" },
         { 0x03B33DDF, "Interaction Tuning (ITUN)" },
@@ -61,7 +65,10 @@ public class DecorativeObjectConversionCapabilityService : IDecorativeObjectConv
         { 0x73878036, "Visual Proxy (VPXY)" },
         { 0x2800D61B, "Python Script (S4SCRIPT)" },
         { 0x034AEECB, "CAS Part (CASP)" },
-        { 0x03B33DDD, "Preset Composite (COMP)" }
+        { 0x03B33DDD, "Preset Composite (COMP)" },
+        { 0x736884F1, "Footprint (FTPT 0x736884F1)" },
+        { 0x03B4C61D, "Model RCOL Header (0x03B4C61D)" },
+        { 0x033A1435, "Design Mode Preset (0x033A1435)" }
     };
 
     private static readonly HashSet<uint> KnownUnsupportedTypeIds = new()
@@ -71,7 +78,10 @@ public class DecorativeObjectConversionCapabilityService : IDecorativeObjectConv
         0x73878036, // VPXY
         0x2800D61B, // S4SCRIPT
         0x034AEECB, // CASP
-        0x03B33DDD  // COMP
+        0x03B33DDD, // COMP
+        0x736884F1, // Footprint (FTPT)
+        0x03B4C61D, // Model RCOL Header
+        0x033A1435  // Design Mode Preset
     };
 
     public DecorativeObjectConversionCapabilityMatrix EvaluateCapability(
