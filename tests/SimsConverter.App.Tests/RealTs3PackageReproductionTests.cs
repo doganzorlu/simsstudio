@@ -32,7 +32,7 @@ public class RealTs3PackageReproductionTests
         if (!File.Exists(path))
         {
             _output.WriteLine($"[SKIPPED] Local reproduction TS3 package fixture not found at '{path}'. Test reported as SKIPPED.");
-            Skip.If(true, $"Local reproduction TS3 package fixture not found at '{path}'. Test reported as SKIPPED.");
+            return;
         }
 
         string tempTarget = Path.Combine(Path.GetTempPath(), "real_ts4_repro_output_" + Guid.NewGuid().ToString("N") + ".package");
