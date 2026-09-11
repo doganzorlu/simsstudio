@@ -21,6 +21,7 @@ public class DbpfPackageParser : IDbpfPackageParser
     // DBPF 2.0 (Sims 4) Offsets
     private const int Dbpf2IndexCountOffset = 36;
     private const int Dbpf2IndexOffsetOffset = 40;
+    private const int Dbpf2AltIndexOffsetOffset = 64; // Secondary 64-bit index offset location in DBPF 2.0 specs
     private const int Dbpf2IndexSizeOffset = 44;
     private const int Dbpf2IndexEntrySize = 32;
 
@@ -29,6 +30,10 @@ public class DbpfPackageParser : IDbpfPackageParser
     private const int Dbpf1IndexOffsetOffset = 32;
     private const int Dbpf1IndexSizeOffset = 36;
     private const int Dbpf1IndexEntrySize = 20;
+
+    // DBPF Header Magic TypeId Constants (0x46504244 / 0x44425046)
+    private const uint DbpfMagicTypeIdLe = 0x46504244;
+    private const uint DbpfMagicTypeIdBe = 0x44425046;
 
     public DbpfParseResult Parse(ReadOnlySpan<byte> buffer)
     {
@@ -44,7 +49,6 @@ public class DbpfPackageParser : IDbpfPackageParser
 
         var issues = new List<ConversionIssue>();
 
-        // Bounds-checked major/minor version reading (guarded for buffer lengths between 4 and 11 bytes)
         int majorVersion = buffer.Length >= 8 ? BinaryPrimitives.ReadInt32LittleEndian(buffer.Slice(4, 4)) : 0;
         int minorVersion = buffer.Length >= 12 ? BinaryPrimitives.ReadInt32LittleEndian(buffer.Slice(8, 4)) : 0;
 
@@ -61,26 +65,33 @@ public class DbpfPackageParser : IDbpfPackageParser
         }
 
         int indexEntryCount;
-        long indexOffset;
+        long rawIndexOffset;
         int indexSizeBytes;
         int entrySize;
 
         if (majorVersion >= 2)
         {
             indexEntryCount = BinaryPrimitives.ReadInt32LittleEndian(buffer.Slice(Dbpf2IndexCountOffset, 4));
-            indexOffset = BinaryPrimitives.ReadInt32LittleEndian(buffer.Slice(Dbpf2IndexOffsetOffset, 4));
+            rawIndexOffset = BinaryPrimitives.ReadInt32LittleEndian(buffer.Slice(Dbpf2IndexOffsetOffset, 4));
+
+            // In DBPF 2.0, if offset 40 is 0, check secondary 64-bit index offset at offset 64
+            if (rawIndexOffset == 0 && buffer.Length >= Dbpf2AltIndexOffsetOffset + 4)
+            {
+                rawIndexOffset = BinaryPrimitives.ReadInt32LittleEndian(buffer.Slice(Dbpf2AltIndexOffsetOffset, 4));
+            }
+
             indexSizeBytes = BinaryPrimitives.ReadInt32LittleEndian(buffer.Slice(Dbpf2IndexSizeOffset, 4));
             entrySize = Dbpf2IndexEntrySize;
         }
         else
         {
             indexEntryCount = BinaryPrimitives.ReadInt32LittleEndian(buffer.Slice(Dbpf1IndexCountOffset, 4));
-            indexOffset = BinaryPrimitives.ReadInt32LittleEndian(buffer.Slice(Dbpf1IndexOffsetOffset, 4));
+            rawIndexOffset = BinaryPrimitives.ReadInt32LittleEndian(buffer.Slice(Dbpf1IndexOffsetOffset, 4));
             indexSizeBytes = BinaryPrimitives.ReadInt32LittleEndian(buffer.Slice(Dbpf1IndexSizeOffset, 4));
             entrySize = Dbpf1IndexEntrySize;
         }
 
-        var header = new DbpfHeader("DBPF", majorVersion, minorVersion, indexEntryCount, indexOffset, indexSizeBytes);
+        var header = new DbpfHeader("DBPF", majorVersion, minorVersion, indexEntryCount, rawIndexOffset, indexSizeBytes);
 
         if (indexEntryCount < 0 || indexEntryCount > MaxAllowedIndexEntries)
         {
@@ -92,11 +103,31 @@ public class DbpfPackageParser : IDbpfPackageParser
             return new DbpfParseResult(false, header, Array.Empty<PackageResourceEntry>(), issues.AsReadOnly());
         }
 
-        if (indexOffset < 0 || indexOffset > int.MaxValue)
+        int minHeaderSize = majorVersion >= 2 ? MinimumHeaderBufferSize : 32;
+        long effectiveIndexOffset = rawIndexOffset;
+
+        if (rawIndexOffset == 0)
+        {
+            if (indexEntryCount > 0)
+            {
+                // TS3 DBPF 1.x / implicit layout convention: indexOffset == 0 means index table starts at offset 96 (immediately following header)
+                effectiveIndexOffset = MinimumHeaderBufferSize;
+            }
+            else
+            {
+                issues.Add(new ConversionIssue(
+                    "PARSE005",
+                    "Invalid index offset (0): indexOffset cannot be zero when indexEntryCount is zero or uninitialized.",
+                    ConversionIssueSeverity.Error
+                ));
+                return new DbpfParseResult(false, header, Array.Empty<PackageResourceEntry>(), issues.AsReadOnly());
+            }
+        }
+        else if (rawIndexOffset < minHeaderSize || rawIndexOffset > int.MaxValue)
         {
             issues.Add(new ConversionIssue(
                 "PARSE005",
-                $"Invalid or out-of-bounds index offset: {indexOffset}.",
+                $"Invalid index offset ({rawIndexOffset}): indexOffset cannot point inside DBPF header (minimum header size is {minHeaderSize} bytes).",
                 ConversionIssueSeverity.Error
             ));
             return new DbpfParseResult(false, header, Array.Empty<PackageResourceEntry>(), issues.AsReadOnly());
@@ -135,7 +166,8 @@ public class DbpfPackageParser : IDbpfPackageParser
         }
 
         var entries = new List<PackageResourceEntry>();
-        long currentOffset = indexOffset;
+        int indexHeaderOffsetShift = (majorVersion >= 2 && indexSizeBytes >= requiredBytes + 4) ? 4 : 0;
+        long currentOffset = effectiveIndexOffset + indexHeaderOffsetShift;
 
         for (int i = 0; i < indexEntryCount; i++)
         {
@@ -151,8 +183,26 @@ public class DbpfPackageParser : IDbpfPackageParser
 
             ReadOnlySpan<byte> entrySpan = buffer.Slice((int)currentOffset, entrySize);
             var entry = ParseEntry(entrySpan, majorVersion);
-            entries.Add(entry);
 
+            if (entry.Id.TypeId == DbpfMagicTypeIdLe || entry.Id.TypeId == DbpfMagicTypeIdBe)
+            {
+                issues.Add(new ConversionIssue(
+                    "PARSE016",
+                    $"Resource entry index {i} has TypeId 0x{entry.Id.TypeId:X8} matching DBPF header magic, indicating a corrupt or misaligned index table.",
+                    ConversionIssueSeverity.Error
+                ));
+            }
+
+            if (entry.DataOffset < 0 || (long)entry.DataOffset + entry.CompressedSize > buffer.Length)
+            {
+                issues.Add(new ConversionIssue(
+                    "PARSE015",
+                    $"Resource entry index {i} (TypeId: 0x{entry.Id.TypeId:X8}) offset ({entry.DataOffset}) + compressed size ({entry.CompressedSize}) exceeds file length ({buffer.Length}).",
+                    ConversionIssueSeverity.Error
+                ));
+            }
+
+            entries.Add(entry);
             currentOffset += entrySize;
         }
 
@@ -168,11 +218,20 @@ public class DbpfPackageParser : IDbpfPackageParser
             uint groupId = BinaryPrimitives.ReadUInt32LittleEndian(entrySpan.Slice(4, 4));
             ulong instanceId = BinaryPrimitives.ReadUInt64LittleEndian(entrySpan.Slice(8, 8));
             long dataOffset = BinaryPrimitives.ReadUInt32LittleEndian(entrySpan.Slice(16, 4));
-            uint compressedSize = BinaryPrimitives.ReadUInt32LittleEndian(entrySpan.Slice(20, 4));
+            uint rawCompressedSize = BinaryPrimitives.ReadUInt32LittleEndian(entrySpan.Slice(20, 4));
             uint decompressedSize = BinaryPrimitives.ReadUInt32LittleEndian(entrySpan.Slice(24, 4));
             ushort flags = BinaryPrimitives.ReadUInt16LittleEndian(entrySpan.Slice(28, 2));
 
+            // DBPF 2.0 compression bit mask (0x80000000 marks payload as compressed)
+            uint compressedSize = rawCompressedSize & 0x7FFFFFFF;
+            bool isCompressed = (rawCompressedSize & 0x80000000u) != 0;
+
             PackageCompressionKind compressionKind = ResolveCompressionKind(flags, compressedSize, decompressedSize);
+            if (isCompressed && compressionKind == PackageCompressionKind.None)
+            {
+                compressionKind = PackageCompressionKind.Zlib;
+            }
+
             var resourceId = new PackageResourceId(typeId, groupId, instanceId);
 
             return new PackageResourceEntry(
@@ -217,7 +276,7 @@ public class DbpfPackageParser : IDbpfPackageParser
             return PackageCompressionKind.Zlib;
         }
 
-        if (flags == 0xFFFE) // RefPack
+        if (flags == 0xFFFE || flags == 0xFFFF) // RefPack / ZLIB variant flags in DBPF 2.0
         {
             return PackageCompressionKind.RefPack;
         }
@@ -277,15 +336,20 @@ public class DbpfPackageParser : IDbpfPackageParser
                 ? BinaryPrimitives.ReadInt32LittleEndian(headerBuffer.AsSpan(Dbpf2IndexCountOffset, 4))
                 : BinaryPrimitives.ReadInt32LittleEndian(headerBuffer.AsSpan(Dbpf1IndexCountOffset, 4));
 
-            long indexOffset = majorVersion >= 2
+            long rawIndexOffset = majorVersion >= 2
                 ? BinaryPrimitives.ReadInt32LittleEndian(headerBuffer.AsSpan(Dbpf2IndexOffsetOffset, 4))
                 : BinaryPrimitives.ReadInt32LittleEndian(headerBuffer.AsSpan(Dbpf1IndexOffsetOffset, 4));
+
+            if (majorVersion >= 2 && rawIndexOffset == 0 && headerBytesRead >= Dbpf2AltIndexOffsetOffset + 4)
+            {
+                rawIndexOffset = BinaryPrimitives.ReadInt32LittleEndian(headerBuffer.AsSpan(Dbpf2AltIndexOffsetOffset, 4));
+            }
 
             int indexSizeBytes = majorVersion >= 2
                 ? BinaryPrimitives.ReadInt32LittleEndian(headerBuffer.AsSpan(Dbpf2IndexSizeOffset, 4))
                 : BinaryPrimitives.ReadInt32LittleEndian(headerBuffer.AsSpan(Dbpf1IndexSizeOffset, 4));
 
-            var header = new DbpfHeader("DBPF", majorVersion, minorVersion, indexEntryCount, indexOffset, indexSizeBytes);
+            var header = new DbpfHeader("DBPF", majorVersion, minorVersion, indexEntryCount, rawIndexOffset, indexSizeBytes);
             var issues = new List<ConversionIssue>();
 
             if (indexEntryCount < 0 || indexEntryCount > MaxAllowedIndexEntries)
@@ -294,9 +358,44 @@ public class DbpfPackageParser : IDbpfPackageParser
                 return new DbpfParseResult(false, header, Array.Empty<PackageResourceEntry>(), issues.AsReadOnly());
             }
 
-            if (indexOffset < 0 || (stream.CanSeek && indexOffset > stream.Length))
+            int minHeaderSize = majorVersion >= 2 ? MinimumHeaderBufferSize : 32;
+            long effectiveIndexOffset = rawIndexOffset;
+
+            if (rawIndexOffset == 0)
             {
-                issues.Add(new ConversionIssue("PARSE005", $"Index offset {indexOffset} is outside stream bounds.", ConversionIssueSeverity.Error));
+                if (indexEntryCount > 0)
+                {
+                    // TS3 DBPF 1.x / implicit layout convention: indexOffset == 0 means index table starts at offset 96 (immediately following header)
+                    effectiveIndexOffset = MinimumHeaderBufferSize;
+                }
+                else
+                {
+                    issues.Add(new ConversionIssue(
+                        "PARSE005",
+                        "Invalid index offset (0): indexOffset cannot be zero when indexEntryCount is zero or uninitialized.",
+                        ConversionIssueSeverity.Error
+                    ));
+                    return new DbpfParseResult(false, header, Array.Empty<PackageResourceEntry>(), issues.AsReadOnly());
+                }
+            }
+
+            if (!stream.CanSeek)
+            {
+                if (effectiveIndexOffset < headerBytesRead)
+                {
+                    return DbpfParseResult.Failure("PARSE014", $"Cannot seek backwards to index offset {effectiveIndexOffset} on non-seekable stream (current position: {headerBytesRead}).");
+                }
+            }
+
+            long streamLength = stream.CanSeek ? stream.Length : long.MaxValue;
+
+            if (rawIndexOffset > 0 && (rawIndexOffset < minHeaderSize || rawIndexOffset > streamLength))
+            {
+                issues.Add(new ConversionIssue(
+                    "PARSE005",
+                    $"Invalid index offset ({rawIndexOffset}): indexOffset cannot point inside DBPF header (minimum header size is {minHeaderSize} bytes), or exceed stream length.",
+                    ConversionIssueSeverity.Error
+                ));
                 return new DbpfParseResult(false, header, Array.Empty<PackageResourceEntry>(), issues.AsReadOnly());
             }
 
@@ -326,14 +425,12 @@ public class DbpfPackageParser : IDbpfPackageParser
                 return new DbpfParseResult(false, header, Array.Empty<PackageResourceEntry>(), issues.AsReadOnly());
             }
 
+            int indexHeaderOffsetShift = (majorVersion >= 2 && indexSizeBytes >= totalRequiredIndexBytes + 4) ? 4 : 0;
+            long entryStartOffset = effectiveIndexOffset + indexHeaderOffsetShift;
+
             if (!stream.CanSeek)
             {
-                if (indexOffset < headerBytesRead)
-                {
-                    return DbpfParseResult.Failure("PARSE014", $"Cannot seek backwards to index offset {indexOffset} on non-seekable stream (current position: {headerBytesRead}).");
-                }
-
-                long bytesToDiscard = indexOffset - headerBytesRead;
+                long bytesToDiscard = entryStartOffset - headerBytesRead;
                 byte[] discardBuffer = new byte[Math.Min(4096, (int)Math.Min(bytesToDiscard, 65536))];
                 long discarded = 0;
 
@@ -344,7 +441,7 @@ public class DbpfPackageParser : IDbpfPackageParser
                     int read = await stream.ReadAsync(discardBuffer.AsMemory(0, toRead), cancellationToken);
                     if (read == 0)
                     {
-                        issues.Add(new ConversionIssue("PARSE005", $"Stream ended while skipping to index offset {indexOffset}.", ConversionIssueSeverity.Error));
+                        issues.Add(new ConversionIssue("PARSE005", $"Stream ended while skipping to index offset {entryStartOffset}.", ConversionIssueSeverity.Error));
                         return new DbpfParseResult(false, header, Array.Empty<PackageResourceEntry>(), issues.AsReadOnly());
                     }
                     discarded += read;
@@ -352,7 +449,7 @@ public class DbpfPackageParser : IDbpfPackageParser
             }
             else
             {
-                stream.Seek(indexOffset, SeekOrigin.Begin);
+                stream.Seek(entryStartOffset, SeekOrigin.Begin);
             }
 
             byte[] indexData = new byte[totalRequiredIndexBytes];
@@ -385,7 +482,27 @@ public class DbpfPackageParser : IDbpfPackageParser
             for (int i = 0; i < parsedEntriesCount; i++)
             {
                 ReadOnlySpan<byte> entrySpan = indexData.AsSpan(i * entrySize, entrySize);
-                entries.Add(ParseEntry(entrySpan, majorVersion));
+                var entry = ParseEntry(entrySpan, majorVersion);
+
+                if (entry.Id.TypeId == DbpfMagicTypeIdLe || entry.Id.TypeId == DbpfMagicTypeIdBe)
+                {
+                    issues.Add(new ConversionIssue(
+                        "PARSE016",
+                        $"Resource entry index {i} has TypeId 0x{entry.Id.TypeId:X8} matching DBPF header magic, indicating a corrupt or misaligned index table.",
+                        ConversionIssueSeverity.Error
+                    ));
+                }
+
+                if (stream.CanSeek && (entry.DataOffset < 0 || (long)entry.DataOffset + entry.CompressedSize > stream.Length))
+                {
+                    issues.Add(new ConversionIssue(
+                        "PARSE015",
+                        $"Resource entry index {i} (TypeId: 0x{entry.Id.TypeId:X8}) offset ({entry.DataOffset}) + compressed size ({entry.CompressedSize}) exceeds file length ({stream.Length}).",
+                        ConversionIssueSeverity.Error
+                    ));
+                }
+
+                entries.Add(entry);
             }
 
             bool isSuccess = !issues.Exists(i => i.Severity is ConversionIssueSeverity.Error or ConversionIssueSeverity.Fatal);

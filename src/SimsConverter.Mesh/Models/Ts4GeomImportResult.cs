@@ -1,0 +1,10 @@
+using System.Collections.Generic;
+using SimsConverter.Domain.Models;
+
+namespace SimsConverter.Mesh.Models;
+
+public record Ts4GeomImportResult(
+    bool IsSuccess,
+    CanonicalMesh? Mesh,
+    IReadOnlyList<ConversionIssue> Issues
+);

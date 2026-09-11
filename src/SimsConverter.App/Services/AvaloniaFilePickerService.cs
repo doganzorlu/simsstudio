@@ -85,4 +85,41 @@ public class AvaloniaFilePickerService : IFilePickerService
 
         return null;
     }
+
+    public async Task<string?> SavePackageFilePickerAsync()
+    {
+        var window = _windowProvider();
+        if (window == null)
+        {
+            return null;
+        }
+
+        var topLevel = TopLevel.GetTopLevel(window);
+        if (topLevel?.StorageProvider == null)
+        {
+            return null;
+        }
+
+        var file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Select TS4 Target Package Location",
+            DefaultExtension = "package",
+            SuggestedFileName = "converted_ts4.package",
+            FileTypeChoices = new[]
+            {
+                new FilePickerFileType("TS4 Package (*.package)")
+                {
+                    Patterns = new[] { "*.package" }
+                },
+                FilePickerFileTypes.All
+            }
+        });
+
+        if (file != null)
+        {
+            return file.TryGetLocalPath();
+        }
+
+        return null;
+    }
 }

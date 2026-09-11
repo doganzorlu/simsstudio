@@ -35,12 +35,22 @@ public class Sims3PackPayloadExporterTests
         return ms.ToArray();
     }
 
+    private static byte[] CreateValidDbpfHeaderBytes(int length = 128)
+    {
+        byte[] bytes = new byte[length];
+        Encoding.ASCII.GetBytes("DBPF").CopyTo(bytes, 0);
+        BitConverter.GetBytes(2).CopyTo(bytes, 4); // Major 2
+        BitConverter.GetBytes(1).CopyTo(bytes, 36); // 1 entry
+        BitConverter.GetBytes(96).CopyTo(bytes, 40); // Index offset 96
+        BitConverter.GetBytes(32).CopyTo(bytes, 44); // Index size 32
+        return bytes;
+    }
+
     [Fact]
     public async Task ExportAsync_GivenValidDbpfCatalogEntry_ExportsPackageFileStartingWithDbpfMagic()
     {
-        // Arrange: Valid DBPF payload (128 bytes)
-        byte[] dbpfPayload = new byte[128];
-        "DBPF"u8.ToArray().CopyTo(dbpfPayload, 0);
+        // Arrange: Valid DBPF payload
+        byte[] dbpfPayload = CreateValidDbpfHeaderBytes(128);
 
         string sourcePath = Path.Combine(Path.GetTempPath(), "valid_source_" + Guid.NewGuid() + ".sims3pack");
         string outputPath = Path.Combine(Path.GetTempPath(), "exported_target_" + Guid.NewGuid() + ".package");
@@ -88,8 +98,7 @@ public class Sims3PackPayloadExporterTests
     public async Task ExportAsync_GivenEstimatedSizeBytesNull_ExportsToEofSuccessfully()
     {
         // Arrange: EstimatedSizeBytes = null (export from DataOffset to EOF)
-        byte[] dbpfPayload = new byte[128];
-        "DBPF"u8.ToArray().CopyTo(dbpfPayload, 0);
+        byte[] dbpfPayload = CreateValidDbpfHeaderBytes(128);
 
         string sourcePath = Path.Combine(Path.GetTempPath(), "null_size_source_" + Guid.NewGuid() + ".sims3pack");
         string outputPath = Path.Combine(Path.GetTempPath(), "null_size_target_" + Guid.NewGuid() + ".package");
@@ -123,6 +132,43 @@ public class Sims3PackPayloadExporterTests
         {
             if (File.Exists(sourcePath)) File.Delete(sourcePath);
             if (File.Exists(outputPath)) File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
+    public async Task ExportAsync_GivenInvalidDbpfCandidateKind_ReturnsControlledFailure()
+    {
+        // Arrange: Catalog entry with Kind = InvalidDbpfPackage
+        string sourcePath = Path.Combine(Path.GetTempPath(), "invalid_kind_source_" + Guid.NewGuid() + ".sims3pack");
+        string outputPath = Path.Combine(Path.GetTempPath(), "output_" + Guid.NewGuid() + ".package");
+
+        await File.WriteAllBytesAsync(sourcePath, new byte[100]);
+
+        var catalogEntry = new Sims3PackCatalogEntry(
+            EntryIndex: 1,
+            Kind: Sims3PackPayloadKind.InvalidDbpfPackage,
+            DataOffset: 20,
+            EstimatedSizeBytes: 50,
+            DisplayName: "Invalid Package",
+            Issues: Array.Empty<ConversionIssue>()
+        );
+
+        var request = new Sims3PackPayloadExportRequest(sourcePath, catalogEntry, outputPath);
+
+        try
+        {
+            // Act
+            var result = await _exporter.ExportAsync(request);
+
+            // Assert
+            result.IsSuccess.Should().BeFalse();
+            result.Issues.Should().ContainSingle();
+            result.Issues[0].Code.Should().Be("S3PE001");
+            File.Exists(outputPath).Should().BeFalse();
+        }
+        finally
+        {
+            if (File.Exists(sourcePath)) File.Delete(sourcePath);
         }
     }
 
@@ -243,8 +289,7 @@ public class Sims3PackPayloadExporterTests
     public async Task ExportAsync_GivenExistingOutputFileAndAllowOverwriteTrue_Succeeds()
     {
         // Arrange: Existing output file with AllowOverwrite = true
-        byte[] dbpfPayload = new byte[128];
-        "DBPF"u8.ToArray().CopyTo(dbpfPayload, 0);
+        byte[] dbpfPayload = CreateValidDbpfHeaderBytes(128);
 
         string sourcePath = Path.Combine(Path.GetTempPath(), "source_ow_" + Guid.NewGuid() + ".sims3pack");
         string outputPath = Path.Combine(Path.GetTempPath(), "existing_ow_" + Guid.NewGuid() + ".package");

@@ -4,6 +4,7 @@
     <ProjectReference Include="..\SimsConverter.Domain\SimsConverter.Domain.csproj" />
     <ProjectReference Include="..\SimsConverter.Package\SimsConverter.Package.csproj" />
     <ProjectReference Include="..\SimsConverter.Textures\SimsConverter.Textures.csproj" />
+    <ProjectReference Include="..\SimsConverter.Mesh\SimsConverter.Mesh.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

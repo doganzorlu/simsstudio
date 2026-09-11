@@ -13,14 +13,29 @@
         <TextBlock DockPanel.Dock="Top" Text="Package &amp; Sims3Pack Inspector &amp; Raw Exporter" FontSize="20" FontWeight="Bold" Margin="0,0,0,12"/>
 
         <!-- File Selection & Action Panel -->
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="*, Auto, Auto, Auto, Auto, Auto" RowDefinitions="Auto, Auto" Margin="0,0,0,12">
-            <TextBox Grid.Column="0" Text="{Binding SelectedFilePath}" PlaceholderText="Enter or select .package or .sims3pack file path..." Margin="0,0,8,0"/>
-            <Button Grid.Column="1" Command="{Binding BrowseCommand}" Content="Browse..." Margin="0,0,8,0"/>
-            <Button Grid.Column="2" Command="{Binding InspectCommand}" Content="Inspect File" Margin="0,0,8,0"/>
-            <CheckBox Grid.Column="3" IsChecked="{Binding AllowOverwrite}" Content="Overwrite Existing" VerticalAlignment="Center" Margin="0,0,8,0"/>
-            <Button Grid.Column="4" Command="{Binding ExportResourceCommand}" Content="Export Selected Raw Resource" IsVisible="{Binding !IsSims3PackMode}"/>
-            <Button Grid.Column="5" Command="{Binding ExportSims3PackPayloadCommand}" Content="Export .package Payload" IsVisible="{Binding IsSims3PackMode}"/>
-            <ProgressBar Grid.Row="1" Grid.ColumnSpan="6" IsVisible="{Binding IsBusy}" IsIndeterminate="True" Margin="0,8,0,0"/>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*, Auto, Auto, Auto, Auto, Auto" RowDefinitions="Auto, Auto, Auto" Margin="0,0,0,12">
+            <!-- Row 0: Input file & inspect -->
+            <TextBox Grid.Row="0" Grid.Column="0" Text="{Binding SelectedFilePath}" PlaceholderText="Enter or select .package or .sims3pack file path..." Margin="0,0,8,4"/>
+            <Button Grid.Row="0" Grid.Column="1" Command="{Binding BrowseCommand}" Content="Browse Source..." Margin="0,0,8,4"/>
+            <Button Grid.Row="0" Grid.Column="2" Command="{Binding InspectCommand}" Content="Inspect File" Margin="0,0,8,4"/>
+            <CheckBox Grid.Row="0" Grid.Column="3" IsChecked="{Binding AllowOverwrite}" Content="Overwrite Existing" VerticalAlignment="Center" Margin="0,0,8,4"/>
+            <Button Grid.Row="0" Grid.Column="4" Command="{Binding ExportResourceCommand}" Content="Export Selected Raw Resource" IsVisible="{Binding !IsSims3PackMode}" Margin="0,0,0,4"/>
+            <Button Grid.Row="0" Grid.Column="5" Command="{Binding ExportSims3PackPayloadCommand}" Content="Export .package Payload" IsVisible="{Binding IsSims3PackMode}" Margin="0,0,0,4"/>
+
+            <!-- Row 1: Target Output path, Direction Selector & Convert action -->
+            <TextBox Grid.Row="1" Grid.Column="0" Text="{Binding TargetOutputPath}" PlaceholderText="Target .package output path..." Margin="0,4,8,0"/>
+            <Button Grid.Row="1" Grid.Column="1" Command="{Binding BrowseTargetOutputCommand}" Content="Browse Target..." Margin="0,4,8,0"/>
+            <ComboBox Grid.Row="1" Grid.Column="2" ItemsSource="{Binding TargetGameVersionOptions}" SelectedItem="{Binding SelectedTargetGameVersionOption}" Margin="0,4,8,0">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding DisplayName}"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <Button Grid.Row="1" Grid.Column="3" Command="{Binding ConvertCommand}" Content="{Binding ConvertButtonContent}" Margin="0,4,8,0"/>
+            <Button Grid.Row="1" Grid.Column="4" Grid.ColumnSpan="2" Command="{Binding InspectConvertedPackageCommand}" Content="Inspect Output Package in UI" Margin="0,4,0,0" IsVisible="{Binding CanInspectConvertedPackage}"/>
+
+            <ProgressBar Grid.Row="2" Grid.ColumnSpan="6" IsVisible="{Binding IsBusy}" IsIndeterminate="True" Margin="0,8,0,0"/>
         </Grid>
 
         <!-- Status Bar -->
@@ -88,9 +103,9 @@
             </StackPanel>
         </Border>
 
-        <!-- Inspection Content Tabs for Package Mode (Visible when IsSims3PackMode is false) -->
-        <TabControl IsVisible="{Binding !IsSims3PackMode}">
-            <TabItem Header="Package Resources">
+        <!-- Inspection Content Tabs -->
+        <TabControl>
+            <TabItem Header="Package Resources" IsVisible="{Binding !IsSims3PackMode}">
                 <DataGrid ItemsSource="{Binding Resources}"
                           SelectedItem="{Binding SelectedResource}"
                           AutoGenerateColumns="False"
@@ -111,7 +126,7 @@
                 </DataGrid>
             </TabItem>
 
-            <TabItem Header="Texture Candidates">
+            <TabItem Header="Texture Candidates" IsVisible="{Binding !IsSims3PackMode}">
                 <DataGrid ItemsSource="{Binding TextureResources}"
                           SelectedItem="{Binding SelectedTextureResource}"
                           AutoGenerateColumns="False"
@@ -130,26 +145,223 @@
                     </DataGrid.Columns>
                 </DataGrid>
             </TabItem>
-        </TabControl>
 
-        <!-- Sims3Pack Embedded Payload Table Grid (Visible when IsSims3PackMode is true) -->
-        <DataGrid ItemsSource="{Binding Sims3PackPayloads}"
-                  SelectedItem="{Binding SelectedSims3PackPayload}"
-                  IsVisible="{Binding IsSims3PackMode}"
-                  AutoGenerateColumns="False"
-                  IsReadOnly="True"
-                  GridLinesVisibility="All"
-                  BorderThickness="1"
-                  BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="#" Binding="{Binding EntryIndex}" Width="0.5*"/>
-                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="*"/>
-                <DataGridTextColumn Header="Offset" Binding="{Binding DataOffsetHex}" CellStyleClasses="monospaced" Width="1.5*"/>
-                <DataGridTextColumn Header="Estimated Size" Binding="{Binding EstimatedSizeFormatted}" Width="1.2*"/>
-                <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName}" Width="2*"/>
-                <DataGridTextColumn Header="Exportable" Binding="{Binding CanExport}" Width="*"/>
-                <DataGridTextColumn Header="Issues" Binding="{Binding Issues.Count}" Width="*"/>
-            </DataGrid.Columns>
-        </DataGrid>
+            <TabItem Header="Mesh Candidates" IsVisible="{Binding !IsSims3PackMode}">
+                <DataGrid ItemsSource="{Binding MeshResources}"
+                          SelectedItem="{Binding SelectedMeshResource}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          GridLinesVisibility="All"
+                          BorderThickness="1"
+                          BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Formatted Key" Binding="{Binding FormattedKey}" CellStyleClasses="monospaced" Width="2*"/>
+                        <DataGridTextColumn Header="Format Name" Binding="{Binding FormatName}" Width="1.2*"/>
+                        <DataGridTextColumn Header="Role" Binding="{Binding RoleKind}" Width="*"/>
+                        <DataGridTextColumn Header="Game Version" Binding="{Binding DetectedGameVersion}" Width="*"/>
+                        <DataGridTextColumn Header="Can Extract" Binding="{Binding CanExtractRawPayload}" Width="*"/>
+                        <DataGridTextColumn Header="Can Inspect" Binding="{Binding CanInspectCanonicalMesh}" Width="*"/>
+                        <DataGridTextColumn Header="Vertices" Binding="{Binding VertexCount}" Width="0.8*"/>
+                        <DataGridTextColumn Header="Faces" Binding="{Binding FaceCount}" Width="0.8*"/>
+                        <DataGridTextColumn Header="Bones" Binding="{Binding BoneCount}" Width="0.8*"/>
+                        <DataGridTextColumn Header="Normals" Binding="{Binding HasNormals}" Width="0.8*"/>
+                        <DataGridTextColumn Header="UV0" Binding="{Binding HasUv0}" Width="0.8*"/>
+                        <DataGridTextColumn Header="Weights" Binding="{Binding HasBoneWeights}" Width="0.8*"/>
+                        <DataGridTextColumn Header="Issues" Binding="{Binding Issues.Count}" Width="0.8*"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem Header="Embedded Payloads" IsVisible="{Binding IsSims3PackMode}">
+                <DataGrid ItemsSource="{Binding Sims3PackPayloads}"
+                          SelectedItem="{Binding SelectedSims3PackPayload}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          GridLinesVisibility="All"
+                          BorderThickness="1"
+                          BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="#" Binding="{Binding EntryIndex}" Width="0.5*"/>
+                        <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="*"/>
+                        <DataGridTextColumn Header="Offset" Binding="{Binding DataOffsetHex}" CellStyleClasses="monospaced" Width="1.5*"/>
+                        <DataGridTextColumn Header="Estimated Size" Binding="{Binding EstimatedSizeFormatted}" Width="1.2*"/>
+                        <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName}" Width="2*"/>
+                        <DataGridTextColumn Header="Exportable" Binding="{Binding CanExport}" Width="*"/>
+                        <DataGridTextColumn Header="Issues" Binding="{Binding Issues.Count}" Width="*"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem Header="Conversion &amp; Output Summary">
+                <DockPanel Margin="8">
+                    <!-- Banner Summary Card -->
+                    <Border DockPanel.Dock="Top"
+                            IsVisible="{Binding HasConversionResult}"
+                            Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="12"
+                            Margin="0,0,0,12">
+                        <Grid ColumnDefinitions="*, Auto" RowDefinitions="Auto, Auto">
+                            <StackPanel Grid.Column="0" Grid.Row="0">
+                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+                                    <TextBlock Text="Conversion Status:" FontWeight="Bold"/>
+                                    <TextBlock Text="SUCCESS" FontWeight="Bold" Foreground="Green" IsVisible="{Binding IsConversionSuccess}"/>
+                                    <TextBlock Text="FAILED" FontWeight="Bold" Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}" IsVisible="{Binding !IsConversionSuccess}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding LastConvertedPackagePath, StringFormat='Output Package: {0}'}" IsVisible="{Binding IsConversionSuccess}" FontSize="12"/>
+                            </StackPanel>
+
+                            <Button Grid.Column="1" Grid.Row="0" Command="{Binding InspectConvertedPackageCommand}" Content="Inspect Output Package in UI" IsVisible="{Binding CanInspectConvertedPackage}" VerticalAlignment="Center"/>
+
+                            <Grid Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="1" ColumnDefinitions="*, *, *, *, *, *, *" Margin="0,12,0,0" IsVisible="{Binding IsConversionSuccess}">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Total Resources" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                    <TextBlock Text="{Binding ConversionTotalResourceCount}" FontSize="16" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Verified Links" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                    <TextBlock Text="{Binding ConversionVerifiedLinkCount}" FontSize="16" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Meshes" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                    <TextBlock Text="{Binding ConversionMeshCount}" FontSize="16" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="3">
+                                    <TextBlock Text="Textures" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                    <TextBlock Text="{Binding ConversionTextureCount}" FontSize="16" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="4">
+                                    <TextBlock Text="RIG" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                    <TextBlock Text="{Binding ConversionRigCount}" FontSize="16" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="5">
+                                    <TextBlock Text="RSLT" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                    <TextBlock Text="{Binding ConversionRsltCount}" FontSize="16" FontWeight="Bold"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="6">
+                                    <TextBlock Text="Payload Bytes" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                    <TextBlock Text="{Binding ConversionTotalPayloadBytes}" FontSize="16" FontWeight="Bold"/>
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
+                    </Border>
+
+                    <Grid RowDefinitions="*, *">
+                        <!-- Conversion Execution Steps DataGrid -->
+                        <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                            <TextBlock DockPanel.Dock="Top" Text="Conversion Execution Pipeline Steps:" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <DataGrid ItemsSource="{Binding ConversionSteps}"
+                                      AutoGenerateColumns="False"
+                                      IsReadOnly="True"
+                                      GridLinesVisibility="All"
+                                      BorderThickness="1"
+                                      BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Step ID" Binding="{Binding StepId}" CellStyleClasses="monospaced" Width="1.5*"/>
+                                    <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="2*"/>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*"/>
+                                    <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="3*"/>
+                                    <DataGridTextColumn Header="Issues" Binding="{Binding Issues.Count}" Width="0.8*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+
+                        <!-- Verified TGI Graph Links DataGrid -->
+                        <DockPanel Grid.Row="1">
+                            <TextBlock DockPanel.Dock="Top" Text="Verified TGI Graph Links:" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <DataGrid ItemsSource="{Binding ConversionResourceLinks}"
+                                      AutoGenerateColumns="False"
+                                      IsReadOnly="True"
+                                      GridLinesVisibility="All"
+                                      BorderThickness="1"
+                                      BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Source Key" Binding="{Binding SourceKey}" CellStyleClasses="monospaced" Width="2*"/>
+                                    <DataGridTextColumn Header="Relationship Type" Binding="{Binding RelationshipType}" Width="1.5*"/>
+                                    <DataGridTextColumn Header="Target Key" Binding="{Binding TargetKey}" CellStyleClasses="monospaced" Width="2*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </Grid>
+                </DockPanel>
+            </TabItem>
+
+            <TabItem Header="Capability Matrix Surface" IsVisible="{Binding HasCapabilityMatrix}">
+                <DockPanel Margin="8">
+                    <!-- Summary Card Header -->
+                    <Border DockPanel.Dock="Top"
+                            Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="12"
+                            Margin="0,0,0,12">
+                        <Grid ColumnDefinitions="*, *, *, *" RowDefinitions="Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Direction" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBlock Text="{Binding ConversionDirectionText}" FontSize="16" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Supported Resources" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBlock Text="{Binding CapabilitySupportedCount}" FontSize="16" FontWeight="Bold" Foreground="Green"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="PassThrough Resources" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBlock Text="{Binding CapabilityPassThroughCount}" FontSize="16" FontWeight="Bold" Foreground="Blue"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="3">
+                                <TextBlock Text="Unsupported Resources" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBlock Text="{Binding CapabilityUnsupportedCount}" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Grid RowDefinitions="*, Auto">
+                        <!-- Capability Entries Table -->
+                        <DataGrid Grid.Row="0"
+                                  ItemsSource="{Binding CapabilityEntries}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  GridLinesVisibility="All"
+                                  BorderThickness="1"
+                                  BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Type ID" Binding="{Binding TypeId, StringFormat='0x{0:X8}'}" CellStyleClasses="monospaced" Width="1.2*"/>
+                                <DataGridTextColumn Header="Resource Type Name" Binding="{Binding TypeName}" Width="2*"/>
+                                <DataGridTextColumn Header="Capability Status" Binding="{Binding CapabilityStatus}" Width="1.2*"/>
+                                <DataGridTextColumn Header="Count" Binding="{Binding ResourceCount}" Width="0.8*"/>
+                                <DataGridTextColumn Header="Handling Strategy / Note" Binding="{Binding Note}" Width="3*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <!-- Capability Warnings Section (CAPA001 / CAPA002) -->
+                        <Border Grid.Row="1"
+                                IsVisible="{Binding HasCapabilityWarnings}"
+                                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                                BorderBrush="{DynamicResource SystemControlErrorTextForegroundBrush}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="8"
+                                Margin="0,8,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Capability Warnings &amp; Omissions (CAPA001 / CAPA002):" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}" Margin="0,0,0,4"/>
+                                <ListBox ItemsSource="{Binding CapabilityWarnings}" MaxHeight="90">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="{Binding Code}" FontWeight="Bold" Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"/>
+                                                <TextBlock Text="{Binding Message}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </DockPanel>
+            </TabItem>
+        </TabControl>
     </DockPanel>
 </Window>

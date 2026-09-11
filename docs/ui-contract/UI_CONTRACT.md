@@ -5,11 +5,12 @@ This document defines the master design system and UI contract for SIMSStudio de
 ---
 
 ## 🏛️ Core Architectural Rules
-1. **Zero Binary Parsing in UI**: Presentation components (`SimsConverter.App` ViewModels, Views, Controls) MUST NOT contain low-level binary parsing or byte offset manipulation (`System.Buffers.Binary.BinaryPrimitives`). Inspection and parsing logic must be executed via `IPackageInspectionService` or `ITextureInspectionService`.
+1. **Zero Binary Parsing in UI**: Presentation components (`SimsConverter.App` ViewModels, Views, Controls) MUST NOT contain low-level binary parsing or byte offset manipulation (`System.Buffers.Binary.BinaryPrimitives`). Inspection and parsing logic must be executed via `IPackageInspectionService`, `ITextureInspectionService`, or `IMeshInspectionService`.
 2. **Transparent Diagnostic Reporting**: UI components MUST report diagnostic issues (`ConversionIssue`) returned by lower layers without swallowing exceptions, displaying zero-byte dummy fallbacks, or masking corrupt container states.
 3. **Semantic Token Policy**: Layout elements must bind to semantic theme resources rather than hardcoded inline hex colors or arbitrary static offsets.
 4. **Asynchronous Non-Blocking Execution**: Long-running inspection or conversion workflows must execute asynchronously without blocking the Avalonia UI main looper thread.
 5. **Texture Candidates Tab Pattern**: Package resource inspection UI MUST present texture candidates in a dedicated `TabControl` tab ("Texture Candidates"), exposing formatted hex keys (`CellStyleClasses="monospaced"`), format names, map kind roles, game versions, capability flags (`CanExtractRawPayload`, `CanParseDdsHeader`), and issue counts without performing texture byte extraction or binary DDS header parsing in the UI.
+6. **Mesh Candidates Tab Pattern**: Package resource inspection UI MUST present mesh candidates in a dedicated `TabControl` tab ("Mesh Candidates"), exposing formatted hex keys (`CellStyleClasses="monospaced"`), format names, mesh roles, game versions, capability flags (`CanExtractRawPayload`, `CanInspectCanonicalMesh`), and canonical mesh decoding summary fields (`VertexCount`, `FaceCount`, `BoneCount`, `HasNormals`, `HasUv0`, `HasBoneWeights`, `Issues.Count`) without performing binary GEOM decoding or stream slicing in the UI assembly.
 
 ---
 
@@ -49,3 +50,4 @@ This document defines the master design system and UI contract for SIMSStudio de
 - [x] Zero binary parsing in UI assembly verified via unit tests (`SimsConverter.App.Tests`).
 - [x] UI contract governance structure established.
 - [x] Texture inspection tab integration verified (`TextureResources`, `CanExtractSelectedTexture`, `CanParseSelectedDdsHeader`).
+- [x] Mesh inspection tab integration verified (`MeshResources`, `CanInspectSelectedMesh`, `SelectedMeshResource`).

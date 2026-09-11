@@ -19,7 +19,7 @@ public class DbpfPackageParserTests
     public void Parse_GivenValidDbpf2HeaderAndOneResourceEntry_ReturnsSuccessfulResult()
     {
         // Arrange: DBPF 2.0 package buffer with header + 1 entry at offset 96
-        byte[] buffer = new byte[96 + 32];
+        byte[] buffer = new byte[2000];
         Encoding.ASCII.GetBytes("DBPF").CopyTo(buffer, 0);
         BitConverter.GetBytes(2).CopyTo(buffer, 4); // Major 2
         BitConverter.GetBytes(0).CopyTo(buffer, 8); // Minor 0
@@ -65,7 +65,7 @@ public class DbpfPackageParserTests
         // Arrange: DBPF 2.0 package with 2 index entries
         int entryCount = 2;
         int indexOffset = 96;
-        byte[] buffer = new byte[indexOffset + (entryCount * 32)];
+        byte[] buffer = new byte[1000];
 
         Encoding.ASCII.GetBytes("DBPF").CopyTo(buffer, 0);
         BitConverter.GetBytes(2).CopyTo(buffer, 4);
@@ -328,6 +328,112 @@ public class DbpfPackageParserTests
                 File.Delete(tempPath);
             }
         }
+    }
+
+    [Fact]
+    public void Parse_IndexOffsetIsZeroAndZeroEntries_ReturnsFailurePARSE005()
+    {
+        byte[] buffer = new byte[128];
+        Encoding.ASCII.GetBytes("DBPF").CopyTo(buffer, 0);
+        BitConverter.GetBytes(2).CopyTo(buffer, 4); // Major 2
+        BitConverter.GetBytes(0).CopyTo(buffer, 36); // 0 entries (INVALID with offset 0!)
+        BitConverter.GetBytes(0).CopyTo(buffer, 40); // Index offset 0
+        BitConverter.GetBytes(0).CopyTo(buffer, 44);
+
+        var result = _parser.Parse(buffer);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Issues.Should().ContainSingle(i => i.Code == "PARSE005");
+    }
+
+    [Fact]
+    public void Parse_GivenTs3PackageWithIndexOffsetZeroAndValidEntries_ParsesSuccessfullyAtOffset96()
+    {
+        // Arrange: TS3 DBPF 1.1 header with indexOffset = 0, indexEntryCount = 1, entries starting at offset 96
+        byte[] buffer = new byte[500];
+        Encoding.ASCII.GetBytes("DBPF").CopyTo(buffer, 0);
+        BitConverter.GetBytes(1).CopyTo(buffer, 4); // Major 1 (TS3)
+        BitConverter.GetBytes(1).CopyTo(buffer, 8); // Minor 1
+        BitConverter.GetBytes(1).CopyTo(buffer, 24); // 1 entry
+        BitConverter.GetBytes(0).CopyTo(buffer, 32); // Index offset 0 (Implicitly starts at offset 96!)
+        BitConverter.GetBytes(20).CopyTo(buffer, 36); // Index size 20 bytes
+
+        // Entry at offset 96 (TS3 20-byte entry)
+        BitConverter.GetBytes(0x00B2D882u).CopyTo(buffer, 96 + 0); // TypeId
+        BitConverter.GetBytes(0x00000000u).CopyTo(buffer, 96 + 4); // GroupId
+        BitConverter.GetBytes(0x123456789ABCDEF0UL).CopyTo(buffer, 96 + 8); // InstanceId
+        BitConverter.GetBytes(200u).CopyTo(buffer, 96 + 12); // DataOffset
+        BitConverter.GetBytes(100u).CopyTo(buffer, 96 + 16); // CompressedSize
+
+        // Act
+        var result = _parser.Parse(buffer);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Entries.Should().ContainSingle();
+        result.Entries[0].Id.TypeId.Should().Be(0x00B2D882u);
+        result.Entries[0].DataOffset.Should().Be(200);
+        result.Entries[0].CompressedSize.Should().Be(100);
+    }
+
+    [Fact]
+    public void Parse_IndexOffsetInsideHeader_ReturnsFailurePARSE005()
+    {
+        byte[] buffer = new byte[128];
+        Encoding.ASCII.GetBytes("DBPF").CopyTo(buffer, 0);
+        BitConverter.GetBytes(2).CopyTo(buffer, 4); // Major 2
+        BitConverter.GetBytes(1).CopyTo(buffer, 36); // 1 entry
+        BitConverter.GetBytes(16).CopyTo(buffer, 40); // Index offset 16 (inside header! INVALID!)
+        BitConverter.GetBytes(32).CopyTo(buffer, 44);
+
+        var result = _parser.Parse(buffer);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Issues.Should().ContainSingle(i => i.Code == "PARSE005");
+    }
+
+    [Fact]
+    public void Parse_ResourceEntryOffsetExceedsBufferLength_ReturnsFailurePARSE015()
+    {
+        byte[] buffer = new byte[128];
+        Encoding.ASCII.GetBytes("DBPF").CopyTo(buffer, 0);
+        BitConverter.GetBytes(2).CopyTo(buffer, 4);
+        BitConverter.GetBytes(1).CopyTo(buffer, 36);
+        BitConverter.GetBytes(96).CopyTo(buffer, 40); // Index offset 96
+        BitConverter.GetBytes(32).CopyTo(buffer, 44);
+
+        // Entry at offset 96 pointing past buffer end (DataOffset 1000 + CompressedSize 500 = 1500 > 128)
+        BitConverter.GetBytes(0x00B2D882u).CopyTo(buffer, 96 + 0);
+        BitConverter.GetBytes(0x00000000u).CopyTo(buffer, 96 + 4);
+        BitConverter.GetBytes(1000u).CopyTo(buffer, 96 + 16); // Offset 1000
+        BitConverter.GetBytes(500u).CopyTo(buffer, 96 + 20); // Size 500
+
+        var result = _parser.Parse(buffer);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Issues.Should().Contain(i => i.Code == "PARSE015");
+    }
+
+    [Fact]
+    public void Parse_ResourceEntryTypeIdIsDbpfMagic_ReturnsFailurePARSE016()
+    {
+        byte[] buffer = new byte[500];
+        Encoding.ASCII.GetBytes("DBPF").CopyTo(buffer, 0);
+        BitConverter.GetBytes(2).CopyTo(buffer, 4);
+        BitConverter.GetBytes(1).CopyTo(buffer, 36);
+        BitConverter.GetBytes(96).CopyTo(buffer, 40);
+        BitConverter.GetBytes(32).CopyTo(buffer, 44);
+
+        // Entry with TypeId 0x46504244 ("DBPF" magic in LE)
+        BitConverter.GetBytes(0x46504244u).CopyTo(buffer, 96 + 0);
+        BitConverter.GetBytes(0x00000000u).CopyTo(buffer, 96 + 4);
+        BitConverter.GetBytes(150u).CopyTo(buffer, 96 + 16);
+        BitConverter.GetBytes(50u).CopyTo(buffer, 96 + 20);
+
+        var result = _parser.Parse(buffer);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Issues.Should().Contain(i => i.Code == "PARSE016");
     }
 
     private sealed class NonSeekableStreamWrapper : Stream

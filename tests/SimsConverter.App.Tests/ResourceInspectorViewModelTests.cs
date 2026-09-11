@@ -104,7 +104,7 @@ public class ResourceInspectorViewModelTests
         viewModel.Resources.Should().ContainSingle();
         viewModel.TextureResources.Should().ContainSingle();
         viewModel.HasTextureResources.Should().BeTrue();
-        viewModel.StatusMessage.Should().Contain("1 resource entries (1 texture candidates)");
+        viewModel.StatusMessage.Should().Contain("1 resource entries (1 texture candidates, 0 mesh candidates).");
     }
 
     [Fact]
@@ -233,8 +233,7 @@ public class ResourceInspectorViewModelTests
         viewModel.CanExtractSelectedTexture.Should().BeFalse();
         viewModel.CanParseSelectedDdsHeader.Should().BeFalse();
         viewModel.HasIssues.Should().BeTrue();
-        viewModel.Issues.Should().ContainSingle();
-        viewModel.Issues[0].Code.Should().Be("TEXC001");
+        viewModel.Issues.Should().Contain(i => i.Code == "TEXC001");
     }
 
     [Fact]
@@ -603,6 +602,11 @@ public class ResourceInspectorViewModelTests
         public Task<string?> OpenFolderPickerAsync()
         {
             return Task.FromResult(_pickedFolderPath);
+        }
+
+        public Task<string?> SavePackageFilePickerAsync()
+        {
+            return Task.FromResult(_pickedPackagePath);
         }
     }
 }

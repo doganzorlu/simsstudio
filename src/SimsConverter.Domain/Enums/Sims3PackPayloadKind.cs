@@ -4,5 +4,6 @@ public enum Sims3PackPayloadKind
 {
     Unknown,
     DbpfPackage,
-    PngPreview
+    PngPreview,
+    InvalidDbpfPackage
 }

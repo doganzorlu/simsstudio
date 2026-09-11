@@ -145,16 +145,19 @@ public class Sims3PackPayloadExporter : ISims3PackPayloadExporter
                 }
             }
 
-            // Post-Export Validation: Inspect first 4 bytes of exported payload for DBPF magic
-            await using (var verifyStream = new FileStream(tempFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4, useAsync: true))
+            // Post-Export Validation: Inspect DBPF header of exported payload file
+            await using (var verifyStream = new FileStream(tempFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 96, useAsync: true))
             {
-                byte[] magicBuffer = new byte[4];
-                int read = await verifyStream.ReadAsync(magicBuffer.AsMemory(0, 4), cancellationToken);
+                byte[] headerBuffer = new byte[96];
+                int read = await verifyStream.ReadAsync(headerBuffer.AsMemory(0, 96), cancellationToken);
 
-                if (read < 4 || !magicBuffer.AsSpan().SequenceEqual(DbpfMagic))
+                List<ConversionIssue>? validationIssues = null;
+                bool headerValid = read >= 96 && Sims3PackPayloadCatalogScanner.ValidateDbpfHeader(headerBuffer.AsSpan(0, read), 0, verifyStream.Length, out validationIssues);
+                if (!headerValid)
                 {
                     CleanupTempFile(tempFilePath);
-                    return Sims3PackPayloadExportResult.Failure(sourcePath, outputPath, "S3PE007", "Exported payload does not contain valid DBPF magic header.");
+                    string issueMsg = validationIssues != null && validationIssues.Count > 0 ? validationIssues[0].Message : "Exported payload does not contain valid DBPF magic header.";
+                    return Sims3PackPayloadExportResult.Failure(sourcePath, outputPath, "S3PE007", $"Exported payload failed DBPF header validation: {issueMsg}");
                 }
             }
 

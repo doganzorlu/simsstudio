@@ -28,7 +28,7 @@ public class PackageInspectionServiceTests
     {
         // Arrange: Temp DBPF package file with 1 resource
         string tempPath = Path.Combine(Path.GetTempPath(), "app_test_1res_" + Guid.NewGuid() + ".package");
-        byte[] buffer = new byte[96 + 32];
+        byte[] buffer = new byte[2000];
         Encoding.ASCII.GetBytes("DBPF").CopyTo(buffer, 0);
         BitConverter.GetBytes(2).CopyTo(buffer, 4); // Major 2
         BitConverter.GetBytes(1).CopyTo(buffer, 36); // 1 entry

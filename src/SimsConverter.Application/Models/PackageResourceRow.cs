@@ -35,4 +35,16 @@ public record PackageResourceRow(
             entry.CompressionKind.ToString()
         );
     }
+
+    public PackageResourceEntry ToEntry()
+    {
+        return new PackageResourceEntry(
+            new PackageResourceId(TypeId, GroupId, InstanceId),
+            Offset,
+            CompressedSize,
+            DecompressedSize,
+            CompressionKind,
+            0
+        );
+    }
 }

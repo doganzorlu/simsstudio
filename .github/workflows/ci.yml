@@ -1,0 +1,103 @@
+name: SIMSStudio CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version-file: global.json
+
+      - name: Restore
+        run: dotnet restore SimsConverter.sln --locked-mode
+
+      - name: Build
+        run: dotnet build SimsConverter.sln --configuration Release --no-restore --nologo
+
+      - name: Test
+        run: dotnet test SimsConverter.sln --configuration Release --no-build --no-restore --nologo --logger "trx;LogFileName=test-results.trx" --results-directory artifacts/test-results
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simsstudio-test-results-${{ matrix.os }}
+          path: artifacts/test-results/*.trx
+          if-no-files-found: ignore
+
+      - name: Publish Windows application
+        if: matrix.os == 'windows-latest' && success()
+        run: >
+          dotnet publish src/SimsConverter.App/SimsConverter.App.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None
+          --output artifacts/publish/win-x64
+
+      - name: Resolve Windows installer version
+        if: matrix.os == 'windows-latest' && success()
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -match '^refs/tags/v(.+)$') {
+            $version = $matches[1]
+          } else {
+            $version = "0.0.0-dev"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Install Inno Setup
+        if: matrix.os == 'windows-latest' && success()
+        run: choco install innosetup -y --no-progress
+
+      - name: Compile Windows installer
+        if: matrix.os == 'windows-latest' && success()
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            /DMyAppVersion=${{ steps.version.outputs.version }} `
+            installer\SIMSStudio.iss
+
+      - name: Upload Windows application
+        if: matrix.os == 'windows-latest' && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simsstudio-windows-win-x64
+          path: artifacts/publish/win-x64
+          if-no-files-found: error
+
+      - name: Upload Windows installer
+        if: matrix.os == 'windows-latest' && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simsstudio-windows-installer
+          path: installer/Output/*.exe
+          if-no-files-found: error

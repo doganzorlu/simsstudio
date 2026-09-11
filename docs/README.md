@@ -32,6 +32,7 @@ dotnet test SimsConverter.sln
 - **DBPF `.package` (Sims 3 / Sims 4)**: Inspection & Raw Payload Export Supported
 - **`.sims3pack` (Sims 3 Archive Wrapper)**: Container Detection, Secure XML Manifest Parsing, Embedded Archive Catalog Scanning, Embedded DBPF Raw Payload Export, UI Inspection Screen & Real Fixture Validation Harness Supported
 - **Phase 2 Texture Pipeline**: Texture TypeId Catalog, Resource Candidate Classifier, Raw Texture Payload Extraction Boundary, Bounds-Checked DDS Binary Header Reader, DDS Payload Truncation Validator, Texture Inspection Application Service & Desktop UI Tab Screen Supported
+- **Phase 3 Mesh Pipeline**: Mesh TypeId Catalog, Resource Candidate Classifier, Raw Mesh Payload Extraction Boundary, Game-Agnostic Canonical Mesh Domain Model Foundation & TS3 GEOM Binary Structural Metadata Reader Supported
 
 ### Key Decision Records
 - [DEC-0001: Architecture Solution Bootstrap](decisions/DEC-0001-architecture-bootstrap.md)
@@ -54,3 +55,25 @@ dotnet test SimsConverter.sln
 - [DEC-0018: DDS Header Parser & Metadata Reader Architecture](decisions/DEC-0018-dds-header-parser.md)
 - [DEC-0019: DDS Payload Validation & Size Estimation Architecture](decisions/DEC-0019-dds-payload-validation.md)
 - [DEC-0020: Texture Inspection Application Boundary Architecture](decisions/DEC-0020-texture-inspection-application-boundary.md)
+- [DEC-0021: Texture Inspection UI Integration Architecture](decisions/DEC-0021-texture-inspection-ui-integration.md)
+- [DEC-0022: Mesh Resource Type Catalog & Candidate Classification Architecture](decisions/DEC-0022-mesh-resource-classification.md)
+- [DEC-0023: Mesh Resource Raw Extraction Boundary Architecture](decisions/DEC-0023-mesh-resource-extraction-boundary.md)
+- [DEC-0024: Canonical Mesh Domain Model Foundation Architecture](decisions/DEC-0024-canonical-mesh-domain-model.md)
+- [DEC-0025: TS3 GEOM Header & Structural Metadata Reader Architecture](decisions/DEC-0025-ts3-geom-metadata-reader.md)
+- [DEC-0026: TS3 GEOM Vertex & Index Decoder to CanonicalMesh Importer Architecture](decisions/DEC-0026-ts3-geom-canonical-mesh-importer.md)
+- [DEC-0027: Mesh Inspection Application Boundary Service Architecture](decisions/DEC-0027-mesh-inspection-application-boundary.md)
+- [DEC-0028: Mesh Inspection UI Integration Architecture](decisions/DEC-0028-mesh-inspection-ui-integration.md)
+- [DEC-0029: TS4 Mesh Resource Format Research & Type Boundary Architecture](decisions/DEC-0029-ts4-mesh-resource-boundary.md)
+- [DEC-0030: TS4 CAS GEOM Metadata Reader Foundation Architecture](decisions/DEC-0030-ts4-cas-geom-metadata-reader.md)
+- [DEC-0031: TS4 CAS GEOM Vertex & Index Decoder to CanonicalMesh Importer Architecture](decisions/DEC-0031-ts4-geom-canonical-mesh-importer.md)
+- [DEC-0032: TS4 Canonical Mesh Inspection Application Integration Architecture](decisions/DEC-0032-ts4-mesh-inspection-application-integration.md)
+- [DEC-0033: Phase 3 Mesh Real Fixture Validation & Compatibility Matrix Architecture](decisions/DEC-0033-mesh-real-fixture-validation.md)
+- [DEC-0034: Decorative Object Conversion Boundary & Planning Skeleton Architecture](decisions/DEC-0034-decorative-object-conversion-boundary-skeleton.md)
+- [DEC-0035: TS3 Decorative Object Source Asset Graph Builder Architecture](decisions/DEC-0035-decorative-object-source-asset-graph.md)
+- [DEC-0036: DBPF Index Sanity Validation & UI Candidate Count Accuracy Architecture](decisions/DEC-0036-dbpf-index-sanity-validation-candidate-count-accuracy.md)
+- [DEC-0037: Sims3Pack Embedded DBPF Payload Validation & Export Boundary Hardening Architecture](decisions/DEC-0037-sims3pack-embedded-dbpf-payload-validation-and-export-boundary-hardening.md)
+- [DEC-0038: Real Sims3Pack Embedded DBPF Implicit Layout Compatibility Architecture](decisions/DEC-0038-real-sims3pack-embedded-dbpf-layout-compatibility.md)
+- [DEC-0039: TS3 MODL/MLOD Object Model Decomposition Research & Boundary Architecture](decisions/DEC-0039-ts3-modl-mlod-decomposition-boundary.md)
+
+## Reports & Specifications
+- [Phase 3 Mesh Pipeline Compatibility Matrix & Real Fixture Validation Report](reports/mesh_compatibility_report.md)

@@ -6,4 +6,5 @@ public interface IFilePickerService
 {
     Task<string?> OpenPackageFilePickerAsync();
     Task<string?> OpenFolderPickerAsync();
+    Task<string?> SavePackageFilePickerAsync();
 }

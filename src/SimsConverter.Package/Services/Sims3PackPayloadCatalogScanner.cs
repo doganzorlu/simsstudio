@@ -138,7 +138,7 @@ public class Sims3PackPayloadCatalogScanner : ISims3PackPayloadCatalogScanner
             // Step 3: Chunked streaming scan over archive section
             var catalogEntries = new List<Sims3PackCatalogEntry>();
             var generalIssues = new List<ConversionIssue>();
-            var detectedOffsets = new HashSet<(Sims3PackPayloadKind, long)>();
+            var detectedOffsets = new HashSet<long>();
 
             long archiveBytesScanned = 0;
             long totalStreamLength = stream.CanSeek ? stream.Length : -1;
@@ -194,31 +194,53 @@ public class Sims3PackPayloadCatalogScanner : ISims3PackPayloadCatalogScanner
                     if (window.Length >= 4 && window[..4].SequenceEqual(DbpfMagic))
                     {
                         long candidateOffset = currentChunkStartOffset + i;
-                        var candidateKey = (Sims3PackPayloadKind.DbpfPackage, candidateOffset);
 
-                        // De-duplication check: Skip if this offset was already recorded in overlap window
-                        if (!detectedOffsets.Contains(candidateKey))
+                        // De-duplication check: Skip if this offset was already recorded
+                        if (!detectedOffsets.Contains(candidateOffset))
                         {
-                            detectedOffsets.Add(candidateKey);
+                            detectedOffsets.Add(candidateOffset);
                             long? estimatedSize = totalStreamLength > 0 ? totalStreamLength - candidateOffset : null;
 
-                            var entryIssues = new List<ConversionIssue>();
-                            if (totalStreamLength > 0 && (totalStreamLength - candidateOffset) < MinDbpfHeaderSize)
+                            // Peek and validate DBPF header candidate
+                            byte[] candidateHeader = new byte[MinDbpfHeaderSize];
+                            int headerBytesRead = 0;
+
+                            if (stream.CanSeek)
                             {
-                                entryIssues.Add(new ConversionIssue(
-                                    "S3PC001",
-                                    $"Truncated DBPF package candidate in Sims3Pack archive. Expected at least {MinDbpfHeaderSize} bytes, found {totalStreamLength - candidateOffset} bytes.",
-                                    ConversionIssueSeverity.Warning
-                                ));
+                                long savedPos = stream.Position;
+                                stream.Seek(candidateOffset, SeekOrigin.Begin);
+                                headerBytesRead = await ReadExactAsync(stream, candidateHeader, cancellationToken);
+                                stream.Seek(savedPos, SeekOrigin.Begin);
                             }
+                            else
+                            {
+                                int available = Math.Min(MinDbpfHeaderSize, currentChunkLength - i);
+                                chunkBuffer.AsSpan(i, available).CopyTo(candidateHeader);
+                                headerBytesRead = available;
+                            }
+
+                            bool isValidDbpf = ValidateDbpfHeader(
+                                candidateHeader.AsSpan(0, headerBytesRead),
+                                candidateOffset,
+                                totalStreamLength,
+                                out var headerIssues
+                            );
+
+                            Sims3PackPayloadKind candidateKind = isValidDbpf
+                                ? Sims3PackPayloadKind.DbpfPackage
+                                : Sims3PackPayloadKind.InvalidDbpfPackage;
+
+                            string candidateDisplayName = isValidDbpf
+                                ? $"Embedded Package #{entryCounter}"
+                                : $"Invalid DBPF Candidate #{entryCounter}";
 
                             catalogEntries.Add(new Sims3PackCatalogEntry(
                                 EntryIndex: entryCounter++,
-                                Kind: Sims3PackPayloadKind.DbpfPackage,
+                                Kind: candidateKind,
                                 DataOffset: candidateOffset,
                                 EstimatedSizeBytes: estimatedSize,
-                                DisplayName: $"Embedded Package #{entryCounter - 1}",
-                                Issues: entryIssues.AsReadOnly()
+                                DisplayName: candidateDisplayName,
+                                Issues: headerIssues.AsReadOnly()
                             ));
                         }
 
@@ -230,12 +252,10 @@ public class Sims3PackPayloadCatalogScanner : ISims3PackPayloadCatalogScanner
                     if (window.Length >= 8 && window[..8].SequenceEqual(PngMagic))
                     {
                         long candidateOffset = currentChunkStartOffset + i;
-                        var candidateKey = (Sims3PackPayloadKind.PngPreview, candidateOffset);
 
-                        // De-duplication check: Skip if this offset was already recorded in overlap window
-                        if (!detectedOffsets.Contains(candidateKey))
+                        if (!detectedOffsets.Contains(candidateOffset))
                         {
-                            detectedOffsets.Add(candidateKey);
+                            detectedOffsets.Add(candidateOffset);
                             long? estimatedSize = totalStreamLength > 0 ? totalStreamLength - candidateOffset : null;
 
                             catalogEntries.Add(new Sims3PackCatalogEntry(
@@ -313,6 +333,127 @@ public class Sims3PackPayloadCatalogScanner : ISims3PackPayloadCatalogScanner
         {
             return Sims3PackCatalogResult.Failure("S3PC009", $"Error scanning Sims3Pack archive catalog: {ex.Message}");
         }
+    }
+
+    public static bool ValidateDbpfHeader(
+        ReadOnlySpan<byte> headerSpan,
+        long candidateOffset,
+        long totalStreamLength,
+        out List<ConversionIssue> issues)
+    {
+        issues = new List<ConversionIssue>();
+
+        if (headerSpan.Length < 4 || !headerSpan[..4].SequenceEqual(DbpfMagic))
+        {
+            issues.Add(new ConversionIssue("S3PC010", $"Candidate at offset 0x{candidateOffset:X8} does not start with DBPF magic header.", ConversionIssueSeverity.Warning));
+            return false;
+        }
+
+        if (headerSpan.Length < MinDbpfHeaderSize)
+        {
+            issues.Add(new ConversionIssue("S3PC010", $"Candidate DBPF header at offset 0x{candidateOffset:X8} is truncated (received {headerSpan.Length} bytes, expected at least {MinDbpfHeaderSize} bytes).", ConversionIssueSeverity.Warning));
+            return false;
+        }
+
+        int majorVersion = BinaryPrimitives.ReadInt32LittleEndian(headerSpan.Slice(4, 4));
+        int minorVersion = BinaryPrimitives.ReadInt32LittleEndian(headerSpan.Slice(8, 4));
+
+        int minHeaderSize = majorVersion >= 2 ? MinDbpfHeaderSize : 32;
+        int indexEntryCount;
+        long indexOffset;
+        int indexSizeBytes;
+        int entrySize;
+
+        if (majorVersion >= 2)
+        {
+            indexEntryCount = BinaryPrimitives.ReadInt32LittleEndian(headerSpan.Slice(36, 4));
+            indexOffset = BinaryPrimitives.ReadInt32LittleEndian(headerSpan.Slice(40, 4));
+            if (indexOffset == 0 && headerSpan.Length >= 68)
+            {
+                indexOffset = BinaryPrimitives.ReadInt32LittleEndian(headerSpan.Slice(64, 4));
+            }
+            indexSizeBytes = BinaryPrimitives.ReadInt32LittleEndian(headerSpan.Slice(44, 4));
+            entrySize = 32;
+        }
+        else
+        {
+            indexEntryCount = BinaryPrimitives.ReadInt32LittleEndian(headerSpan.Slice(24, 4));
+            indexOffset = BinaryPrimitives.ReadInt32LittleEndian(headerSpan.Slice(32, 4));
+            indexSizeBytes = BinaryPrimitives.ReadInt32LittleEndian(headerSpan.Slice(36, 4));
+            entrySize = 20;
+        }
+
+        if (indexEntryCount <= 0 || indexEntryCount > 5_000_000)
+        {
+            issues.Add(new ConversionIssue(
+                "S3PC010",
+                $"Invalid embedded DBPF header at offset 0x{candidateOffset:X8}: indexEntryCount ({indexEntryCount}) must be positive and non-zero.",
+                ConversionIssueSeverity.Warning
+            ));
+            return false;
+        }
+
+        long effectiveIndexOffset = indexOffset;
+        if (indexOffset == 0)
+        {
+            effectiveIndexOffset = MinDbpfHeaderSize;
+        }
+        else if (indexOffset < minHeaderSize)
+        {
+            issues.Add(new ConversionIssue(
+                "S3PC010",
+                $"Invalid embedded DBPF header at offset 0x{candidateOffset:X8}: indexOffset ({indexOffset}) points inside DBPF header (minimum header size is {minHeaderSize} bytes).",
+                ConversionIssueSeverity.Warning
+            ));
+            return false;
+        }
+
+        if (indexSizeBytes < 0)
+        {
+            issues.Add(new ConversionIssue(
+                "S3PC010",
+                $"Invalid embedded DBPF header at offset 0x{candidateOffset:X8}: indexSizeBytes ({indexSizeBytes}) is negative.",
+                ConversionIssueSeverity.Warning
+            ));
+            return false;
+        }
+
+        long requiredIndexBytes = (long)indexEntryCount * entrySize;
+        if (indexSizeBytes < requiredIndexBytes)
+        {
+            issues.Add(new ConversionIssue(
+                "S3PC010",
+                $"Invalid embedded DBPF header at offset 0x{candidateOffset:X8}: indexSizeBytes ({indexSizeBytes}) is smaller than required bytes ({requiredIndexBytes}) for {indexEntryCount} entries.",
+                ConversionIssueSeverity.Warning
+            ));
+            return false;
+        }
+
+        if (totalStreamLength > 0)
+        {
+            long availableBytesFromCandidate = totalStreamLength - candidateOffset;
+            if (availableBytesFromCandidate < minHeaderSize)
+            {
+                issues.Add(new ConversionIssue(
+                    "S3PC010",
+                    $"Invalid embedded DBPF header at offset 0x{candidateOffset:X8}: remaining archive size ({availableBytesFromCandidate} bytes) is less than minimum DBPF header size ({minHeaderSize} bytes).",
+                    ConversionIssueSeverity.Warning
+                ));
+                return false;
+            }
+
+            if (effectiveIndexOffset + requiredIndexBytes > availableBytesFromCandidate)
+            {
+                issues.Add(new ConversionIssue(
+                    "S3PC010",
+                    $"Invalid embedded DBPF header at offset 0x{candidateOffset:X8}: index table range ({effectiveIndexOffset} + {requiredIndexBytes}) extends beyond archive file end.",
+                    ConversionIssueSeverity.Warning
+                ));
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static async Task<int> ReadExactAsync(Stream stream, byte[] buffer, CancellationToken cancellationToken)

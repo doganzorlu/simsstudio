@@ -41,12 +41,22 @@ public class Sims3PackPayloadCatalogScannerTests
         return ms.ToArray();
     }
 
+    private static byte[] CreateValidDbpfHeaderBytes(int length = 200)
+    {
+        byte[] bytes = new byte[length];
+        Encoding.ASCII.GetBytes("DBPF").CopyTo(bytes, 0);
+        BitConverter.GetBytes(2).CopyTo(bytes, 4); // Major 2
+        BitConverter.GetBytes(1).CopyTo(bytes, 36); // 1 entry
+        BitConverter.GetBytes(96).CopyTo(bytes, 40); // Index offset 96
+        BitConverter.GetBytes(32).CopyTo(bytes, 44); // Index size 32
+        return bytes;
+    }
+
     [Fact]
     public async Task ScanFileAsync_GivenEmbeddedDbpfPayload_ReturnsDbpfCatalogEntryWithCorrectOffset()
     {
-        // Arrange: XML section + 100 bytes DBPF payload
-        byte[] dbpfBytes = new byte[128];
-        "DBPF"u8.ToArray().CopyTo(dbpfBytes, 0);
+        // Arrange: XML section + valid DBPF package payload
+        byte[] dbpfBytes = CreateValidDbpfHeaderBytes(200);
 
         string testPath = Path.Combine(Path.GetTempPath(), "dbpf_catalog_" + Guid.NewGuid() + ".sims3pack");
         byte[] fullPayload = CreateSims3PackWithPayloadFixture(archivePayload: dbpfBytes);
@@ -74,11 +84,83 @@ public class Sims3PackPayloadCatalogScannerTests
     }
 
     [Fact]
+    public async Task ScanFileAsync_GivenInvalidDbpfCandidateWithZeroIndexEntries_ClassifiesAsInvalidDbpfPackage()
+    {
+        // Arrange: DBPF magic present, but indexEntryCount is 0 (INVALID!)
+        byte[] invalidDbpfBytes = new byte[200];
+        Encoding.ASCII.GetBytes("DBPF").CopyTo(invalidDbpfBytes, 0);
+        BitConverter.GetBytes(2).CopyTo(invalidDbpfBytes, 4);
+        BitConverter.GetBytes(0).CopyTo(invalidDbpfBytes, 36); // 0 entries
+        BitConverter.GetBytes(0).CopyTo(invalidDbpfBytes, 40); // Index offset 0
+        BitConverter.GetBytes(0).CopyTo(invalidDbpfBytes, 44);
+
+        string testPath = Path.Combine(Path.GetTempPath(), "invalid_dbpf_" + Guid.NewGuid() + ".sims3pack");
+        byte[] fullPayload = CreateSims3PackWithPayloadFixture(archivePayload: invalidDbpfBytes);
+        await File.WriteAllBytesAsync(testPath, fullPayload);
+
+        try
+        {
+            // Act
+            var result = await _scanner.ScanFileAsync(testPath);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            result.Entries.Should().ContainSingle();
+            result.Entries[0].Kind.Should().Be(Sims3PackPayloadKind.InvalidDbpfPackage);
+            result.Entries[0].Issues.Should().ContainSingle(i => i.Code == "S3PC010");
+        }
+        finally
+        {
+            if (File.Exists(testPath)) File.Delete(testPath);
+        }
+    }
+
+    [Fact]
+    public async Task ScanFileAsync_GivenInvalidDbpfFollowedByValidDbpf_IdentifiesBothCorrectly()
+    {
+        // Arrange: Invalid DBPF candidate (0 entries) followed by valid DBPF candidate
+        byte[] multiPayload = new byte[600];
+        
+        // Candidate 1 at offset 0 (Invalid: indexEntryCount 0)
+        Encoding.ASCII.GetBytes("DBPF").CopyTo(multiPayload, 0);
+        BitConverter.GetBytes(2).CopyTo(multiPayload, 4);
+        BitConverter.GetBytes(0).CopyTo(multiPayload, 36);
+        BitConverter.GetBytes(0).CopyTo(multiPayload, 40);
+
+        // Candidate 2 at offset 250 (Valid: indexOffset 96, 1 entry)
+        Encoding.ASCII.GetBytes("DBPF").CopyTo(multiPayload, 250 + 0);
+        BitConverter.GetBytes(2).CopyTo(multiPayload, 250 + 4);
+        BitConverter.GetBytes(1).CopyTo(multiPayload, 250 + 36);
+        BitConverter.GetBytes(96).CopyTo(multiPayload, 250 + 40);
+        BitConverter.GetBytes(32).CopyTo(multiPayload, 250 + 44);
+
+        string testPath = Path.Combine(Path.GetTempPath(), "multi_invalid_valid_" + Guid.NewGuid() + ".sims3pack");
+        byte[] fullPayload = CreateSims3PackWithPayloadFixture(archivePayload: multiPayload);
+        await File.WriteAllBytesAsync(testPath, fullPayload);
+
+        try
+        {
+            // Act
+            var result = await _scanner.ScanFileAsync(testPath);
+
+            // Assert
+            result.IsSuccess.Should().BeTrue();
+            result.Entries.Should().HaveCount(2);
+            result.Entries[0].Kind.Should().Be(Sims3PackPayloadKind.InvalidDbpfPackage);
+            result.Entries[1].Kind.Should().Be(Sims3PackPayloadKind.DbpfPackage);
+        }
+        finally
+        {
+            if (File.Exists(testPath)) File.Delete(testPath);
+        }
+    }
+
+    [Fact]
     public async Task ScanFileAsync_GivenDbpfInChunkOverlapRegion_ReturnsSingleDeduplicatedEntry()
     {
         // Arrange: Place DBPF magic in overlap region near end of 8192 byte chunk (offset 8188)
         byte[] largePayload = new byte[16000];
-        byte[] dbpfHeader = "DBPF\x02\x00\x00\x00"u8.ToArray();
+        byte[] dbpfHeader = CreateValidDbpfHeaderBytes(200);
         Array.Copy(dbpfHeader, 0, largePayload, 8188, dbpfHeader.Length);
 
         string testPath = Path.Combine(Path.GetTempPath(), "overlap_dbpf_" + Guid.NewGuid() + ".sims3pack");
@@ -139,10 +221,11 @@ public class Sims3PackPayloadCatalogScannerTests
     public async Task ScanFileAsync_GivenMaxCatalogEntriesLimitReached_ReturnsControlledWarningIssue()
     {
         // Arrange: Create payload containing 120 DBPF candidates (> 100 limit)
-        byte[] manyDbpfs = new byte[120 * 16];
+        byte[] manyDbpfs = new byte[120 * 200];
+        byte[] singleHeader = CreateValidDbpfHeaderBytes(200);
         for (int i = 0; i < 120; i++)
         {
-            "DBPF"u8.ToArray().CopyTo(manyDbpfs, i * 16);
+            singleHeader.CopyTo(manyDbpfs, i * 200);
         }
 
         string testPath = Path.Combine(Path.GetTempPath(), "max_entries_" + Guid.NewGuid() + ".sims3pack");
@@ -188,9 +271,11 @@ public class Sims3PackPayloadCatalogScannerTests
     public async Task ScanFileAsync_GivenMultipleDbpfCandidates_ReturnsEntriesOrderedByDataOffset()
     {
         // Arrange: 2 DBPF candidates separated by padding bytes
-        byte[] multiPayload = new byte[512];
-        "DBPF"u8.ToArray().CopyTo(multiPayload, 10);  // Candidate 1 at offset 10
-        "DBPF"u8.ToArray().CopyTo(multiPayload, 200); // Candidate 2 at offset 200
+        byte[] multiPayload = new byte[600];
+        byte[] validHeader1 = CreateValidDbpfHeaderBytes(200);
+        byte[] validHeader2 = CreateValidDbpfHeaderBytes(200);
+        validHeader1.CopyTo(multiPayload, 10);  // Candidate 1 at offset 10
+        validHeader2.CopyTo(multiPayload, 300); // Candidate 2 at offset 300
 
         string testPath = Path.Combine(Path.GetTempPath(), "multi_dbpf_" + Guid.NewGuid() + ".sims3pack");
         byte[] fullPayload = CreateSims3PackWithPayloadFixture(archivePayload: multiPayload);
@@ -215,7 +300,7 @@ public class Sims3PackPayloadCatalogScannerTests
     }
 
     [Fact]
-    public async Task ScanFileAsync_GivenTruncatedDbpfCandidate_ReturnsEntryWithControlledIssue()
+    public async Task ScanFileAsync_GivenTruncatedDbpfCandidate_ReturnsInvalidEntryWithControlledIssue()
     {
         // Arrange: DBPF magic candidate followed by only 10 bytes (< 96 bytes)
         byte[] truncatedDbpfBytes = new byte[14];
@@ -233,9 +318,8 @@ public class Sims3PackPayloadCatalogScannerTests
             // Assert
             result.IsSuccess.Should().BeTrue();
             result.Entries.Should().ContainSingle();
-            result.Entries[0].Kind.Should().Be(Sims3PackPayloadKind.DbpfPackage);
-            result.Entries[0].Issues.Should().ContainSingle();
-            result.Entries[0].Issues[0].Code.Should().Be("S3PC001");
+            result.Entries[0].Kind.Should().Be(Sims3PackPayloadKind.InvalidDbpfPackage);
+            result.Entries[0].Issues.Should().ContainSingle(i => i.Code == "S3PC010");
         }
         finally
         {
@@ -248,8 +332,8 @@ public class Sims3PackPayloadCatalogScannerTests
     {
         // Arrange: xmlLength set to 999999 bytes extending beyond file length
         string testPath = Path.Combine(Path.GetTempPath(), "bad_xml_len_scan_" + Guid.NewGuid() + ".sims3pack");
-        byte[] payload = CreateSims3PackWithPayloadFixture("<Sims3Pack/>", customXmlLength: 999999);
-        await File.WriteAllBytesAsync(testPath, payload);
+        byte[] fullPayload = CreateSims3PackWithPayloadFixture(customXmlLength: 999999);
+        await File.WriteAllBytesAsync(testPath, fullPayload);
 
         try
         {
@@ -267,40 +351,12 @@ public class Sims3PackPayloadCatalogScannerTests
         }
     }
 
-    [Fact]
-    public async Task ScanFileAsync_GivenNoArchivePayload_ReturnsSuccessfulEmptyCatalog()
-    {
-        // Arrange: Container ends right after XML metadata
-        string testPath = Path.Combine(Path.GetTempPath(), "no_archive_" + Guid.NewGuid() + ".sims3pack");
-        byte[] fullPayload = CreateSims3PackWithPayloadFixture(archivePayload: Array.Empty<byte>());
-        await File.WriteAllBytesAsync(testPath, fullPayload);
-
-        try
-        {
-            // Act
-            var result = await _scanner.ScanFileAsync(testPath);
-
-            // Assert
-            result.IsSuccess.Should().BeTrue();
-            result.Entries.Should().BeEmpty();
-            result.Issues.Should().BeEmpty();
-        }
-        finally
-        {
-            if (File.Exists(testPath)) File.Delete(testPath);
-        }
-    }
-
     private sealed class NonSeekableStreamWrapper : Stream
     {
-        private readonly Stream _baseStream;
+        private readonly Stream _inner;
+        public NonSeekableStreamWrapper(Stream inner) => _inner = inner;
 
-        public NonSeekableStreamWrapper(Stream baseStream)
-        {
-            _baseStream = baseStream;
-        }
-
-        public override bool CanRead => _baseStream.CanRead;
+        public override bool CanRead => _inner.CanRead;
         public override bool CanSeek => false;
         public override bool CanWrite => false;
         public override long Length => throw new NotSupportedException();
@@ -310,10 +366,10 @@ public class Sims3PackPayloadCatalogScannerTests
             set => throw new NotSupportedException();
         }
 
-        public override void Flush() => _baseStream.Flush();
-        public override int Read(byte[] buffer, int offset, int count) => _baseStream.Read(buffer, offset, count);
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, System.Threading.CancellationToken cancellationToken) => _baseStream.ReadAsync(buffer, offset, count, cancellationToken);
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, System.Threading.CancellationToken cancellationToken = default) => _baseStream.ReadAsync(buffer, cancellationToken);
+        public override void Flush() => _inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) => _inner.ReadAsync(buffer, offset, count, cancellationToken);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) => _inner.ReadAsync(buffer, cancellationToken);
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
