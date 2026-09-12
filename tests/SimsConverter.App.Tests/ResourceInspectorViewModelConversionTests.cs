@@ -522,6 +522,94 @@ public class ResourceInspectorViewModelConversionTests
         viewModel.TargetOutputPath.Should().EndWith("_ts4.package");
     }
 
+    [Fact]
+    public async Task InspectAsync_GivenCasPackage_PopulatesClassificationAndPackageItems()
+    {
+        // Arrange
+        var caspRow = new PackageResourceRow(
+            TypeId: 0x0355E0A6,
+            GroupId: 0,
+            InstanceId: 1,
+            TypeHex: "0355E0A6",
+            GroupHex: "00000000",
+            InstanceHex: "0000000000000001",
+            FormattedKey: "0355E0A6:00000000:0000000000000001",
+            Offset: 96,
+            CompressedSize: 100,
+            DecompressedSize: 200,
+            CompressionKind: PackageCompressionKind.Zlib,
+            CompressionName: "ZLIB"
+        );
+
+        var inspectionResult = new PackageInspectionResult(
+            IsSuccess: true,
+            FilePath: "/source/ts3_cas.package",
+            Header: new DbpfHeader("DBPF", 2, 0, 0, 96, 1),
+            Resources: new[] { caspRow },
+            Issues: Array.Empty<ConversionIssue>()
+        );
+
+        var viewModel = new ResourceInspectorViewModel(new FakePackageInspectionService(inspectionResult))
+        {
+            SelectedFilePath = "/source/ts3_cas.package"
+        };
+
+        // Act
+        await viewModel.InspectCommand.ExecuteAsync(null);
+
+        // Assert
+        viewModel.HasPackageClassification.Should().BeTrue();
+        viewModel.PackageClassificationCategory.Should().Be(PackageItemCategory.CasPart);
+        viewModel.PackageClassificationText.Should().Contain("Create-a-Sim (CAS)");
+        viewModel.PackageItems.Should().HaveCount(1);
+        viewModel.SelectedPackageItem.Should().NotBeNull();
+        viewModel.SelectedPackageItem!.Category.Should().Be(PackageItemCategory.CasPart);
+    }
+
+    [Fact]
+    public async Task InspectAsync_GivenMixedCompoundPackage_PopulatesMultipleItemsAndRouting()
+    {
+        // Arrange
+        var cobjRow = new PackageResourceRow(
+            TypeId: 0x319E4F1D, GroupId: 0, InstanceId: 1, TypeHex: "319E4F1D", GroupHex: "00000000", InstanceHex: "0000000000000001",
+            FormattedKey: "319E4F1D:00000000:0000000000000001", Offset: 96, CompressedSize: 100, DecompressedSize: 100,
+            CompressionKind: PackageCompressionKind.None, CompressionName: "None"
+        );
+        var caspRow = new PackageResourceRow(
+            TypeId: 0x0355E0A6, GroupId: 0, InstanceId: 2, TypeHex: "0355E0A6", GroupHex: "00000000", InstanceHex: "0000000000000002",
+            FormattedKey: "0355E0A6:00000000:0000000000000002", Offset: 196, CompressedSize: 100, DecompressedSize: 100,
+            CompressionKind: PackageCompressionKind.None, CompressionName: "None"
+        );
+
+        var inspectionResult = new PackageInspectionResult(
+            IsSuccess: true,
+            FilePath: "/source/mixed.package",
+            Header: new DbpfHeader("DBPF", 2, 0, 0, 96, 2),
+            Resources: new[] { cobjRow, caspRow },
+            Issues: Array.Empty<ConversionIssue>()
+        );
+
+        var viewModel = new ResourceInspectorViewModel(new FakePackageInspectionService(inspectionResult))
+        {
+            SelectedFilePath = "/source/mixed.package"
+        };
+
+        // Act
+        await viewModel.InspectCommand.ExecuteAsync(null);
+
+        // Assert
+        viewModel.HasPackageClassification.Should().BeTrue();
+        viewModel.PackageClassificationCategory.Should().Be(PackageItemCategory.MixedCompound);
+        viewModel.HasMultiplePackageItems.Should().BeTrue();
+        viewModel.PackageItems.Should().HaveCount(2);
+
+        // Select CAS item
+        viewModel.SelectedPackageItem = viewModel.PackageItems[1];
+        viewModel.SelectedPackageItem.Category.Should().Be(PackageItemCategory.CasPart);
+        viewModel.SelectedResource.Should().NotBeNull();
+        viewModel.SelectedResource!.FormattedKey.Should().Be(caspRow.FormattedKey);
+    }
+
     private sealed class FakePackageInspectionService : IPackageInspectionService
     {
         private readonly PackageInspectionResult _result;
@@ -616,7 +704,7 @@ public class ResourceInspectorViewModelConversionTests
             return Task.FromResult(_pickedPackagePath);
         }
 
-        public Task<string?> OpenFolderPickerAsync()
+        public Task<string?> OpenFolderPickerAsync(string? title = null)
         {
             return Task.FromResult(_pickedFolderPath);
         }

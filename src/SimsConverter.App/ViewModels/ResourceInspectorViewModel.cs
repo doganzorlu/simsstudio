@@ -10,9 +10,12 @@ using SimsConverter.App.Services;
 using SimsConverter.Application.Contracts;
 using SimsConverter.Application.Models;
 using SimsConverter.Application.Services;
+using SimsConverter.Domain.Constants;
 using SimsConverter.Domain.Enums;
 using SimsConverter.Domain.Models;
+using SimsConverter.Domain.Services;
 using SimsConverter.Mesh.Services;
+using SimsConverter.Package.Services;
 using SimsConverter.Textures.Services;
 
 namespace SimsConverter.App.ViewModels;
@@ -27,8 +30,28 @@ public partial class ResourceInspectorViewModel : ObservableObject
     private readonly IMeshInspectionService? _meshInspectionService;
     private readonly IDecorativeObjectConversionService? _conversionService;
     private readonly IDecorativeObjectConversionCapabilityService _capabilityService;
+    private readonly IPackageItemClassifier _itemClassifier;
 
     private PackageInspectionResult? _lastPackageInspectionResult;
+
+    [ObservableProperty]
+    private PackageItemClassificationResult? _packageClassification;
+
+    [ObservableProperty]
+    private PackageItemCategory _packageClassificationCategory = PackageItemCategory.Unknown;
+
+    [ObservableProperty]
+    private string _packageClassificationText = "Unclassified Package";
+
+    [ObservableProperty]
+    private bool _hasPackageClassification;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ConvertCommand))]
+    private PackageItemSummary? _selectedPackageItem;
+
+    [ObservableProperty]
+    private bool _hasMultiplePackageItems;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(InspectCommand))]
@@ -171,6 +194,42 @@ public partial class ResourceInspectorViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasCapabilityWarnings;
 
+    [ObservableProperty]
+    private string? _batchSourceFolderPath;
+
+    [ObservableProperty]
+    private string? _batchOutputFolderPath;
+
+    [ObservableProperty]
+    private bool _isBatchProcessing;
+
+    [ObservableProperty]
+    private bool _hasBatchItems;
+
+    [ObservableProperty]
+    private int _batchTotalCount;
+
+    [ObservableProperty]
+    private int _batchSuccessCount;
+
+    [ObservableProperty]
+    private int _batchFailedCount;
+
+    [ObservableProperty]
+    private int _batchSkippedCount;
+
+    [ObservableProperty]
+    private int _batchIgnoredCount;
+
+    [ObservableProperty]
+    private int _batchPendingCount;
+
+    [ObservableProperty]
+    private string? _batchProgressText;
+
+    [ObservableProperty]
+    private BatchConversionItem? _selectedBatchItem;
+
     public ObservableCollection<PackageResourceRow> Resources { get; } = new();
     public ObservableCollection<Sims3PackPayloadRow> Sims3PackPayloads { get; } = new();
     public ObservableCollection<TextureResourceRow> TextureResources { get; } = new();
@@ -180,6 +239,10 @@ public partial class ResourceInspectorViewModel : ObservableObject
     public ObservableCollection<DecorativeObjectSourceResourceLink> ConversionResourceLinks { get; } = new();
     public ObservableCollection<ConversionCapabilityEntry> CapabilityEntries { get; } = new();
     public ObservableCollection<ConversionIssue> CapabilityWarnings { get; } = new();
+    public ObservableCollection<PackageItemSummary> PackageItems { get; } = new();
+    public ObservableCollection<BatchConversionItem> BatchItems { get; } = new();
+
+    private readonly IBatchConversionService _batchConversionService;
 
     public bool HasIssues => Issues.Count > 0;
     public bool HasTextureResources => TextureResources.Count > 0;
@@ -208,6 +271,11 @@ public partial class ResourceInspectorViewModel : ObservableObject
                 return Sims3PackPayloads.Any(p => p.CanExport);
             }
 
+            if (HasPackageClassification && PackageClassificationCategory is PackageItemCategory.CasPart or PackageItemCategory.MixedCompound)
+            {
+                return SelectedPackageItem != null && SelectedPackageItem.Category is PackageItemCategory.CasPart or PackageItemCategory.DecorativeObject;
+            }
+
             // Capability Guard Check: If preflight matrix has been evaluated and 0 supported resources exist, block conversion!
             if (HasCapabilityMatrix && CapabilitySupportedCount == 0)
             {
@@ -219,6 +287,19 @@ public partial class ResourceInspectorViewModel : ObservableObject
     }
     public bool CanInspectConvertedPackage => !IsBusy && IsConversionSuccess && !string.IsNullOrWhiteSpace(LastConvertedPackagePath) && File.Exists(LastConvertedPackagePath);
 
+    partial void OnSelectedPackageItemChanged(PackageItemSummary? value)
+    {
+        if (value != null && Resources.Count > 0)
+        {
+            var match = Resources.FirstOrDefault(r => string.Equals(r.FormattedKey, value.ItemId, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                SelectedResource = match;
+            }
+        }
+        OnPropertyChanged(nameof(CanConvert));
+    }
+
     public ResourceInspectorViewModel(
         IPackageInspectionService inspectionService,
         IResourceExportService? exportService = null,
@@ -227,7 +308,10 @@ public partial class ResourceInspectorViewModel : ObservableObject
         ITextureInspectionService? textureInspectionService = null,
         IMeshInspectionService? meshInspectionService = null,
         IDecorativeObjectConversionService? conversionService = null,
-        IDecorativeObjectConversionCapabilityService? capabilityService = null)
+        IDecorativeObjectConversionCapabilityService? capabilityService = null,
+        IPackageItemClassifier? itemClassifier = null,
+        ICasItemConversionService? casConversionService = null,
+        IBatchConversionService? batchConversionService = null)
     {
         _inspectionService = inspectionService ?? throw new ArgumentNullException(nameof(inspectionService));
         _exportService = exportService;
@@ -237,6 +321,16 @@ public partial class ResourceInspectorViewModel : ObservableObject
         _meshInspectionService = meshInspectionService;
         _conversionService = conversionService;
         _capabilityService = capabilityService ?? new DecorativeObjectConversionCapabilityService();
+        _itemClassifier = itemClassifier ?? new PackageItemClassifier();
+
+        var casService = casConversionService ?? new CasItemConversionService(_inspectionService);
+        var decService = _conversionService ?? new DecorativeObjectConversionService(
+            _inspectionService,
+            _meshInspectionService ?? new MeshInspectionService(_inspectionService, new MeshResourceClassifier(), new Ts3GeomCanonicalMeshImporter(new Ts3GeomMetadataReader(), new CanonicalMeshValidator()), new Ts4GeomCanonicalMeshImporter(new Ts4GeomMetadataReader(), new CanonicalMeshValidator()), new PackageResourcePayloadReader()),
+            _textureInspectionService ?? new TextureInspectionService(_inspectionService, new TextureResourceClassifier())
+        );
+        _batchConversionService = batchConversionService ?? new BatchConversionService(_inspectionService, decService, casService, _itemClassifier, _sims3PackInspectionService);
+
         _selectedTargetGameVersionOption = TargetGameVersionOptions[0];
     }
 
@@ -497,7 +591,8 @@ public partial class ResourceInspectorViewModel : ObservableObject
                         r.TypeId == 0x2172D019u || // TS4 RMAT
                         r.TypeId == 0x2BC04EDFu || // TS4 LRLE
                         r.TypeId == 0x3453CF95u || // TS4 RLE2
-                        r.TypeId == 0x2F7D0004u);  // TS4 PNG image
+                        r.TypeId == 0x2F7D0004u || // TS4 PNG image
+                        r.TypeId == 0x034B5D85u);  // TS4 CASP
                     TargetGameVersion = isTs4Source ? GameVersion.Sims3 : GameVersion.Sims4;
 
                     if (_textureInspectionService != null)
@@ -556,6 +651,41 @@ public partial class ResourceInspectorViewModel : ObservableObject
 
                     _lastPackageInspectionResult = result;
                     UpdateCapabilityMatrixPreflight(result);
+
+                    if (_itemClassifier != null && result.Resources != null)
+                    {
+                        var classification = _itemClassifier.ClassifyPackage(SelectedFilePath, result.Resources);
+                        PackageClassification = classification;
+                        PackageItems.Clear();
+
+                        if (classification != null)
+                        {
+                            PackageClassificationCategory = classification.MainCategory;
+                            PackageClassificationText = classification.MainCategory switch
+                            {
+                                PackageItemCategory.DecorativeObject => "Decorative Object Package",
+                                PackageItemCategory.CasPart => "Create-a-Sim (CAS) Part Package",
+                                PackageItemCategory.MixedCompound => "Mixed Compound Package (Objects & CAS Parts)",
+                                _ => "Unknown Package Category"
+                            };
+                            HasPackageClassification = true;
+
+                            foreach (var item in classification.Items)
+                            {
+                                PackageItems.Add(item);
+                            }
+                            HasMultiplePackageItems = PackageItems.Count > 1;
+
+                            if (PackageItems.Count > 0)
+                            {
+                                SelectedPackageItem = PackageItems[0];
+                            }
+                            else
+                            {
+                                SelectedPackageItem = null;
+                            }
+                        }
+                    }
 
                     StatusMessage = Resources.Count > 0
                         ? $"Package inspection complete. Found {Resources.Count} resource entries ({knownTextureCandidates} texture candidates, {knownMeshCandidates} mesh candidates)."
@@ -977,6 +1107,120 @@ public partial class ResourceInspectorViewModel : ObservableObject
 
         SelectedFilePath = LastConvertedPackagePath;
         await InspectAsync(cancellationToken);
+    }
+
+    [RelayCommand]
+    public async Task BrowseFolderAsync()
+    {
+        if (_filePickerService != null)
+        {
+            string? pickedFolder = await _filePickerService.OpenFolderPickerAsync("Select Source Folder");
+            if (!string.IsNullOrWhiteSpace(pickedFolder))
+            {
+                BatchSourceFolderPath = pickedFolder;
+                if (string.IsNullOrWhiteSpace(BatchOutputFolderPath))
+                {
+                    BatchOutputFolderPath = pickedFolder;
+                }
+                await ScanBatchFolderAsync();
+            }
+        }
+    }
+
+    [RelayCommand]
+    public async Task BrowseBatchOutputFolderAsync()
+    {
+        if (_filePickerService != null)
+        {
+            string? pickedFolder = await _filePickerService.OpenFolderPickerAsync("Select Target Output Folder");
+            if (!string.IsNullOrWhiteSpace(pickedFolder))
+            {
+                BatchOutputFolderPath = pickedFolder;
+            }
+        }
+    }
+
+    [RelayCommand]
+    public async Task ScanBatchFolderAsync(CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(BatchSourceFolderPath) || !Directory.Exists(BatchSourceFolderPath))
+        {
+            return;
+        }
+
+        IsBusy = true;
+        StatusMessage = "Scanning folder for .package and .sims3pack batch files...";
+        BatchItems.Clear();
+
+        try
+        {
+            var result = await _batchConversionService.ScanFolderAsync(BatchSourceFolderPath, BatchOutputFolderPath, cancellationToken);
+            foreach (var item in result.Items)
+            {
+                BatchItems.Add(item);
+            }
+
+            UpdateBatchCounts();
+            StatusMessage = $"Batch folder scan complete. Discovered {BatchItems.Count} total candidate container file(s).";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Failed to scan batch folder: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    public async Task ConvertBatchAsync(CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(BatchSourceFolderPath) || BatchItems.Count == 0 || IsBatchProcessing)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        IsBatchProcessing = true;
+        StatusMessage = "Starting folder batch conversion...";
+
+        try
+        {
+            var request = new BatchConversionRequest(BatchSourceFolderPath, BatchOutputFolderPath, BatchItems.ToList());
+            var progress = new Progress<BatchConversionProgress>(p =>
+            {
+                BatchProgressText = $"Processing file {p.CurrentItemIndex}/{p.TotalItemCount}: {p.CurrentFileName}";
+                StatusMessage = BatchProgressText;
+                UpdateBatchCounts();
+            });
+
+            var result = await _batchConversionService.ExecuteBatchConversionAsync(request, progress, cancellationToken);
+
+            UpdateBatchCounts();
+            StatusMessage = $"Batch conversion finished! Processed {result.TotalCount} files ({result.SuccessCount} successful, {result.FailedCount} failed, {result.SkippedCount} skipped, {result.IgnoredCount} ignored).";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Batch conversion encountered an unexpected error: {ex.Message}";
+        }
+        finally
+        {
+            IsBatchProcessing = false;
+            IsBusy = false;
+            UpdateBatchCounts();
+        }
+    }
+
+    private void UpdateBatchCounts()
+    {
+        BatchTotalCount = BatchItems.Count;
+        BatchSuccessCount = BatchItems.Count(i => i.Status == BatchItemStatus.Success);
+        BatchFailedCount = BatchItems.Count(i => i.Status == BatchItemStatus.Failed);
+        BatchSkippedCount = BatchItems.Count(i => i.Status == BatchItemStatus.Skipped);
+        BatchIgnoredCount = BatchItems.Count(i => i.Status == BatchItemStatus.Ignored);
+        BatchPendingCount = BatchItems.Count(i => i.Status == BatchItemStatus.Pending || i.Status == BatchItemStatus.InProgress);
+        HasBatchItems = BatchItems.Count > 0;
     }
 }
 

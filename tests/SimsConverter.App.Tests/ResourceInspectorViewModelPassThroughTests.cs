@@ -10,6 +10,7 @@ using SimsConverter.App.ViewModels;
 using SimsConverter.Application.Contracts;
 using SimsConverter.Application.Models;
 using SimsConverter.Application.Services;
+using SimsConverter.Domain.Constants;
 using SimsConverter.Domain.Enums;
 using SimsConverter.Domain.Models;
 using SimsConverter.Domain.Services;
@@ -198,17 +199,17 @@ public class ResourceInspectorViewModelPassThroughTests
         {
             var geomId = new PackageResourceId(0x015A1849, 0, 0x10);
             var stblId = new PackageResourceId(0x220557DA, 0, 0x20); // PassThrough
-            var caspId = new PackageResourceId(0x034AEECB, 0, 0x30); // Known Unsupported (CASP)
+            var itunId = new PackageResourceId(0x03B33DDF, 0, 0x30); // Known Unsupported (ITUN)
 
             byte[] geomPayload = CreateMinimalValidGeomPayload();
             byte[] stblPayload = new byte[] { 0x53, 0x54, 0x42, 0x4C, 0xAA, 0xBB };
-            byte[] caspPayload = new byte[] { 0x43, 0x41, 0x53, 0x50, 0x11, 0x22 };
+            byte[] itunPayload = new byte[] { 0x49, 0x54, 0x55, 0x4E, 0x11, 0x22 };
 
             CreateTestDbpfPackage(sourcePackagePath, new[]
             {
                 (geomId, geomPayload),
                 (stblId, stblPayload),
-                (caspId, caspPayload)
+                (itunId, itunPayload)
             });
 
             var dbpfParser = new DbpfPackageParser();

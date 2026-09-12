@@ -58,7 +58,7 @@ public class AvaloniaFilePickerService : IFilePickerService
         return null;
     }
 
-    public async Task<string?> OpenFolderPickerAsync()
+    public async Task<string?> OpenFolderPickerAsync(string? title = null)
     {
         var window = _windowProvider();
         if (window == null)
@@ -74,7 +74,7 @@ public class AvaloniaFilePickerService : IFilePickerService
 
         var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = "Select Export Destination Folder",
+            Title = string.IsNullOrWhiteSpace(title) ? "Select Export Destination Folder" : title,
             AllowMultiple = false
         });
 

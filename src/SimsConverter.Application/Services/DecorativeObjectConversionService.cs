@@ -25,6 +25,8 @@ public class DecorativeObjectConversionService : IDecorativeObjectConversionServ
     private readonly ITs4ResourcePayloadCompatibilityVerifier _payloadVerifier;
     private readonly IDbpfPackageParser _dbpfParser;
     private readonly IDecorativeObjectConversionCapabilityService _capabilityService;
+    private readonly IPackageItemClassifier _itemClassifier;
+    private readonly ICasItemConversionService _casConversionService;
 
     public DecorativeObjectConversionService(
         IPackageInspectionService packageInspectionService,
@@ -36,7 +38,9 @@ public class DecorativeObjectConversionService : IDecorativeObjectConversionServ
         IDecorativeObjectPackageWriter? packageWriter = null,
         ITs4ResourcePayloadCompatibilityVerifier? payloadVerifier = null,
         IDbpfPackageParser? dbpfParser = null,
-        IDecorativeObjectConversionCapabilityService? capabilityService = null)
+        IDecorativeObjectConversionCapabilityService? capabilityService = null,
+        IPackageItemClassifier? itemClassifier = null,
+        ICasItemConversionService? casConversionService = null)
     {
         _packageInspectionService = packageInspectionService ?? throw new ArgumentNullException(nameof(packageInspectionService));
         _meshInspectionService = meshInspectionService ?? throw new ArgumentNullException(nameof(meshInspectionService));
@@ -48,6 +52,8 @@ public class DecorativeObjectConversionService : IDecorativeObjectConversionServ
         _payloadVerifier = payloadVerifier ?? new Ts4ResourcePayloadCompatibilityVerifier();
         _dbpfParser = dbpfParser ?? new DbpfPackageParser();
         _capabilityService = capabilityService ?? new DecorativeObjectConversionCapabilityService();
+        _itemClassifier = itemClassifier ?? new PackageItemClassifier();
+        _casConversionService = casConversionService ?? new CasItemConversionService(_packageInspectionService);
     }
 
     public DecorativeObjectConversionResult CreateConversionPlan(DecorativeObjectConversionRequest request)
@@ -299,6 +305,16 @@ public class DecorativeObjectConversionService : IDecorativeObjectConversionServ
                 "CONVA002",
                 "Target output path is null or empty."
             );
+        }
+
+        var pkgInspect = await _packageInspectionService.InspectFileAsync(request.SourcePackagePath, cancellationToken).ConfigureAwait(false);
+        if (pkgInspect.IsSuccess && pkgInspect.Resources != null)
+        {
+            var classification = _itemClassifier.ClassifyPackage(request.SourcePackagePath, pkgInspect.Resources);
+            if (classification.MainCategory == PackageItemCategory.CasPart)
+            {
+                return await _casConversionService.ConvertCasPackageAsync(request, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         var planResult = await CreateConversionPlanAsync(request, cancellationToken).ConfigureAwait(false);

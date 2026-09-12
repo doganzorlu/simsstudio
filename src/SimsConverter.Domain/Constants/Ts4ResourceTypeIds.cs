@@ -54,4 +54,19 @@ public static class Ts4ResourceTypeIds
     /// TS4 LRLE Texture Resource (LRLE). TypeId: 0x2BC04EDF.
     /// </summary>
     public const uint LrleTexture = 0x2BC04EDF;
+
+    /// <summary>
+    /// TS4 Create-a-Sim Part Resource (CASP). TypeId: 0x034B5D85.
+    /// </summary>
+    public const uint CasPartTS4 = 0x034B5D85;
+
+    /// <summary>
+    /// TS3 Create-a-Sim Part Resource (CASP). TypeId: 0x0355E0A6.
+    /// </summary>
+    public const uint CasPartTS3 = 0x0355E0A6;
+
+    /// <summary>
+    /// TS3 Visual Proxy Resource (VPXY). TypeId: 0x00AE6C67.
+    /// </summary>
+    public const uint VpxyTS3 = 0x00AE6C67;
 }

@@ -39,7 +39,7 @@ To ensure transparent operational safety and UI feedback, SimsConverter requires
 | **BCON** | `0x03B33DDE` | Binary Constants | `Unsupported` | `Unsupported` | Skipped + `CAPA001` Warning Emitted |
 | **VPXY** | `0x73878036` | Visual Proxy | `Unsupported` | `Unsupported` | Skipped + `CAPA001` Warning Emitted |
 | **S4SCRIPT** | `0x2800D61B` | Python Script | `Unsupported` | `Unsupported` | Skipped + `CAPA001` Warning Emitted |
-| **CASP** | `0x034AEECB` | CAS Part | `Unsupported` | `Unsupported` | Skipped + `CAPA001` Warning Emitted |
+| **CASP** | `0x034B5D85`, `0x0355E0A6` | CAS Part | `Unsupported` | `Unsupported` | Skipped + `CAPA001` Warning Emitted |
 
 | **Unknown / Unrecognized** | `0x...` | Any Unlisted TypeId | `Unsupported` | `Unsupported` | Skipped + `CAPA002` Warning Emitted |
 

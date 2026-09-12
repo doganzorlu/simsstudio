@@ -599,7 +599,7 @@ public class ResourceInspectorViewModelTests
             return Task.FromResult(_pickedPackagePath);
         }
 
-        public Task<string?> OpenFolderPickerAsync()
+        public Task<string?> OpenFolderPickerAsync(string? title = null)
         {
             return Task.FromResult(_pickedFolderPath);
         }

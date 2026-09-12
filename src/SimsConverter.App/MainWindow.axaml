@@ -41,6 +41,44 @@
         <!-- Status Bar -->
         <TextBlock DockPanel.Dock="Top" Text="{Binding StatusMessage}" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,12"/>
 
+        <!-- Package Classification & Multi-Item Selector Panel (Visible when HasPackageClassification is true) -->
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding HasPackageClassification}"
+                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="12"
+                Margin="0,0,0,12">
+            <Grid ColumnDefinitions="Auto, *, Auto" RowDefinitions="Auto">
+                <StackPanel Grid.Column="0" Orientation="Vertical" Margin="0,0,16,0" VerticalAlignment="Center">
+                    <TextBlock Text="Package Mode:" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBlock Text="{Binding PackageClassificationText}" FontSize="14" FontWeight="Bold"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Vertical" VerticalAlignment="Center">
+                    <TextBlock Text="Discovered Package Items (Multi-Item Routing):" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,2"/>
+                    <ComboBox ItemsSource="{Binding PackageItems}" SelectedItem="{Binding SelectedPackageItem}" HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="{Binding ItemTitle}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding Category, StringFormat='[{0}]'}" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                    <TextBlock Text="{Binding MeshCount, StringFormat='Meshes: {0}'}" FontSize="11"/>
+                                    <TextBlock Text="{Binding TextureCount, StringFormat='Textures: {0}'}" FontSize="11"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Vertical" Margin="16,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="Selected Item ID:" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBlock Text="{Binding SelectedPackageItem.ItemId, FallbackValue='N/A'}" FontSize="12" FontFamily="Monospace" FontWeight="SemiBold"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
         <!-- Sims3Pack Metadata Panel (Visible when IsSims3PackMode is true) -->
         <Border DockPanel.Dock="Top"
                 IsVisible="{Binding IsSims3PackMode}"
@@ -360,6 +398,96 @@
                             </StackPanel>
                         </Border>
                     </Grid>
+                </DockPanel>
+            </TabItem>
+            <TabItem Header="Folder Batch Conversion">
+                <DockPanel Margin="8">
+                    <!-- Batch Top Toolbar & Folder Selection -->
+                    <Border DockPanel.Dock="Top"
+                            Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="12"
+                            Margin="0,0,0,12">
+                        <Grid ColumnDefinitions="*, Auto, Auto, Auto" RowDefinitions="Auto, Auto, Auto, Auto">
+                            <!-- OS Selection Guidance Banner -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="4"
+                                       Text="💡 Folder Selection Guide: macOS users: highlight or open folder and click 'Open'. Windows users: click 'Select Folder'."
+                                       FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                       Margin="0,0,0,8" TextWrapping="Wrap"/>
+
+                            <TextBox Grid.Row="1" Grid.Column="0" Text="{Binding BatchSourceFolderPath}" PlaceholderText="Select folder containing .package and .sims3pack files..." Margin="0,0,8,4"/>
+                            <Button Grid.Row="1" Grid.Column="1" Command="{Binding BrowseFolderCommand}" Content="Select Source Folder..." ToolTip.Tip="Open native picker with title 'Select Source Folder'" Margin="0,0,8,4"/>
+                            <Button Grid.Row="1" Grid.Column="2" Command="{Binding ScanBatchFolderCommand}" Content="Scan Folder" Margin="0,0,8,4"/>
+                            <Button Grid.Row="1" Grid.Column="3" Command="{Binding ConvertBatchCommand}" Content="Convert Batch" FontWeight="Bold" Margin="0,0,0,4"/>
+
+                            <TextBox Grid.Row="2" Grid.Column="0" Text="{Binding BatchOutputFolderPath}" PlaceholderText="Output destination folder (defaults to source folder)..." Margin="0,4,8,4"/>
+                            <Button Grid.Row="2" Grid.Column="1" Command="{Binding BrowseBatchOutputFolderCommand}" Content="Select Target Output Folder..." ToolTip.Tip="Open native picker with title 'Select Target Output Folder'" Margin="0,4,8,4"/>
+                            <TextBlock Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="2" Text="{Binding BatchProgressText}" VerticalAlignment="Center" FontWeight="SemiBold" Margin="8,4,0,4"/>
+
+                            <!-- Selected Folder Path Summary Banner -->
+                            <StackPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="16" Margin="0,4,0,0">
+                                <TextBlock Text="{Binding BatchSourceFolderPath, StringFormat='Source Path: {0}'}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBlock Text="{Binding BatchOutputFolderPath, StringFormat='Target Path: {0}'}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Batch Summary Dashboard Cards -->
+                    <Border DockPanel.Dock="Top"
+                            IsVisible="{Binding HasBatchItems}"
+                            Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="12"
+                            Margin="0,0,0,12">
+                        <Grid ColumnDefinitions="*, *, *, *, *, *" RowDefinitions="Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Total Files" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBlock Text="{Binding BatchTotalCount}" FontSize="18" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Successful" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBlock Text="{Binding BatchSuccessCount}" FontSize="18" FontWeight="Bold" Foreground="Green"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Failed" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBlock Text="{Binding BatchFailedCount}" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="3">
+                                <TextBlock Text="Skipped" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBlock Text="{Binding BatchSkippedCount}" FontSize="18" FontWeight="Bold" Foreground="Orange"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="4">
+                                <TextBlock Text="Ignored / Standalone" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBlock Text="{Binding BatchIgnoredCount}" FontSize="18" FontWeight="Bold" Foreground="Gray"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="5">
+                                <TextBlock Text="Pending" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBlock Text="{Binding BatchPendingCount}" FontSize="18" FontWeight="Bold"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Batch Results DataGrid -->
+                    <DataGrid ItemsSource="{Binding BatchItems}"
+                              SelectedItem="{Binding SelectedBatchItem}"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              GridLinesVisibility="All"
+                              BorderThickness="1"
+                              BorderBrush="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="File Name" Binding="{Binding FileName}" Width="2*"/>
+                            <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.2*"/>
+                            <DataGridTextColumn Header="Direction" Binding="{Binding DirectionText}" Width="*"/>
+                            <DataGridTextColumn Header="Target Path" Binding="{Binding TargetOutputPath}" CellStyleClasses="monospaced" Width="2.5*"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*"/>
+                            <DataGridTextColumn Header="Status / Diagnostics" Binding="{Binding StatusMessage}" Width="3*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
                 </DockPanel>
             </TabItem>
         </TabControl>

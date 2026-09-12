@@ -100,6 +100,11 @@ public class Ts4ResourcePayloadCompatibilityVerifier : ITs4ResourcePayloadCompat
                     VerifyMaterialPayload(entry, payload, indexKeys, issues, ref verifiedLinkCount);
                     break;
 
+                case Ts4ResourceTypeIds.CasPartTS4: // CASP TS4 0x034B5D85
+                case Ts4ResourceTypeIds.CasPartTS3: // CASP TS3 0x0355E0A6
+                    VerifyCasPartPayload(entry, payload, indexKeys, issues, ref verifiedLinkCount);
+                    break;
+
                 case Ts4ResourceTypeIds.Geom: // GEOM 0x015A1849
                     VerifyGeomPayload(entry, payload, issues);
                     break;
@@ -372,6 +377,43 @@ public class Ts4ResourcePayloadCompatibilityVerifier : ITs4ResourcePayloadCompat
             {
                 issues.AddRange(decodeResult.Issues.Where(i => i.Severity is ConversionIssueSeverity.Error or ConversionIssueSeverity.Fatal));
             }
+        }
+    }
+
+    private static void VerifyCasPartPayload(PackageResourceEntry entry, byte[] payload, HashSet<string> indexKeys, List<ConversionIssue> issues, ref int linkCount)
+    {
+        if (payload.Length < 52 || Encoding.ASCII.GetString(payload, 0, 4) != "CASP")
+        {
+            issues.Add(new ConversionIssue("VAL008", $"CAS Part resource {entry.Id.FormattedKey} payload header is invalid (expected magic 'CASP' and size >= 52 bytes).", ConversionIssueSeverity.Error));
+            return;
+        }
+
+        uint geomTypeId = BitConverter.ToUInt32(payload, 20);
+        uint geomGroupId = BitConverter.ToUInt32(payload, 24);
+        ulong geomInstanceId = BitConverter.ToUInt64(payload, 28);
+
+        string geomKey = new PackageResourceId(geomTypeId, geomGroupId, geomInstanceId).FormattedKey;
+        if (!indexKeys.Contains(geomKey))
+        {
+            issues.Add(new ConversionIssue("VAL008", $"CASP resource {entry.Id.FormattedKey} references non-existent GEOM TGI {geomKey} in package index.", ConversionIssueSeverity.Error));
+        }
+        else
+        {
+            linkCount++;
+        }
+
+        uint texTypeId = BitConverter.ToUInt32(payload, 36);
+        uint texGroupId = BitConverter.ToUInt32(payload, 40);
+        ulong texInstanceId = BitConverter.ToUInt64(payload, 44);
+
+        string texKey = new PackageResourceId(texTypeId, texGroupId, texInstanceId).FormattedKey;
+        if (!indexKeys.Contains(texKey))
+        {
+            issues.Add(new ConversionIssue("VAL008", $"CASP resource {entry.Id.FormattedKey} references non-existent Texture TGI {texKey} in package index.", ConversionIssueSeverity.Error));
+        }
+        else
+        {
+            linkCount++;
         }
     }
 }

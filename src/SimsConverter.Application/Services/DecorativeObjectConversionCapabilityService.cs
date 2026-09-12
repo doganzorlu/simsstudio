@@ -64,7 +64,8 @@ public class DecorativeObjectConversionCapabilityService : IDecorativeObjectConv
         { 0x03B33DDE, "Binary Constants (BCON)" },
         { 0x73878036, "Visual Proxy (VPXY)" },
         { 0x2800D61B, "Python Script (S4SCRIPT)" },
-        { 0x034AEECB, "CAS Part (CASP)" },
+        { Ts4ResourceTypeIds.CasPartTS4, "CAS Part (CASP TS4)" },
+        { Ts4ResourceTypeIds.CasPartTS3, "CAS Part (CASP TS3)" },
         { 0x03B33DDD, "Preset Composite (COMP)" },
         { 0x736884F1, "Footprint (FTPT 0x736884F1)" },
         { 0x03B4C61D, "Model RCOL Header (0x03B4C61D)" },
@@ -77,7 +78,8 @@ public class DecorativeObjectConversionCapabilityService : IDecorativeObjectConv
         0x03B33DDE, // BCON
         0x73878036, // VPXY
         0x2800D61B, // S4SCRIPT
-        0x034AEECB, // CASP
+        Ts4ResourceTypeIds.CasPartTS4, // CASP TS4
+        Ts4ResourceTypeIds.CasPartTS3, // CASP TS3
         0x03B33DDD, // COMP
         0x736884F1, // Footprint (FTPT)
         0x03B4C61D, // Model RCOL Header

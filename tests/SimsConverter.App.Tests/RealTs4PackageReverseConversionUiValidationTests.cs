@@ -386,4 +386,205 @@ public class RealTs4PackageReverseConversionUiValidationTests
             }
         }
     }
+
+    private static string? GetExternalTs4CasPackageFixturePath(ITestOutputHelper? output)
+    {
+        var candidatePaths = new List<string>();
+
+        // 1. Solution fixtures directory
+        string solutionDir = FindSolutionDir();
+        string localFixtureDir = Path.Combine(solutionDir, "fixtures", "local");
+        if (Directory.Exists(localFixtureDir))
+        {
+            candidatePaths.AddRange(Directory.GetFiles(localFixtureDir, "*.package", SearchOption.AllDirectories));
+        }
+
+        // 2. User Downloads directory
+        string userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string downloadsDir = Path.Combine(userHome, "Downloads");
+        if (Directory.Exists(downloadsDir))
+        {
+            candidatePaths.AddRange(Directory.GetFiles(downloadsDir, "*.package", SearchOption.AllDirectories));
+        }
+
+        IDbpfPackageParser parser = new DbpfPackageParser();
+
+        foreach (var path in candidatePaths.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var info = new FileInfo(path);
+                if (info.Length < 5000) continue;
+
+                var parseResult = parser.ParseFileAsync(path).GetAwaiter().GetResult();
+                if (!parseResult.IsSuccess || parseResult.Entries == null) continue;
+
+                bool hasTs4Casp = parseResult.Entries.Any(e => e.Id.TypeId == Ts4ResourceTypeIds.CasPartTS4); // 0x034B5D85
+                bool hasRle2 = parseResult.Entries.Any(e => e.Id.TypeId == Ts4ResourceTypeIds.Rle2Texture);   // 0x3453CF95
+
+                if (hasTs4Casp)
+                {
+                    output?.WriteLine($"[EXTERNAL TS4 CAS FIXTURE FOUND] Discovered genuine TS4 CAS package fixture: '{path}' ({info.Length:N0} bytes, HasRLE2: {hasRle2}).");
+                    return path;
+                }
+            }
+            catch
+            {
+                // Ignore candidate parse exceptions during discovery scan
+            }
+        }
+
+        output?.WriteLine($"[EXTERNAL TS4 CAS FIXTURE MISSING] No genuine TS4 CAS package fixture (containing 0x034B5D85 TS4 CASP) found in fixtures/local or $HOME/Downloads.");
+        return null;
+    }
+
+    [SkippableFact]
+    public async Task ExecuteRealIndiCasPackageReverseConversionValidationAsync()
+    {
+        // Arrange & Step 1: Discover external genuine TS4 CAS .package golden fixture
+        string? casFixturePath = GetExternalTs4CasPackageFixturePath(_output);
+        if (string.IsNullOrEmpty(casFixturePath) || !File.Exists(casFixturePath))
+        {
+            ThrowSkipException("[SKIPPED] Genuine external TS4 CAS package golden fixture (containing 0x034B5D85 TS4 CASP) not found in fixtures/local or $HOME/Downloads. Reverse TS4 CAS conversion validation skipped cleanly.");
+            return;
+        }
+
+        string tempDir = Path.Combine(Path.GetTempPath(), "real_ts4_cas_rev_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string targetPath1 = Path.Combine(tempDir, "converted_ts3_cas_1.package");
+        string targetPath2 = Path.Combine(tempDir, "converted_ts3_cas_2.package");
+
+        try
+        {
+            IDbpfPackageParser parser = new DbpfPackageParser();
+            IPackageInspectionService packageService = new PackageInspectionService(parser);
+            var meshClassifier = new MeshResourceClassifier();
+            var validator = new CanonicalMeshValidator();
+            var ts3Importer = new Ts3GeomCanonicalMeshImporter(new Ts3GeomMetadataReader(), validator);
+            var ts4Importer = new Ts4GeomCanonicalMeshImporter(new Ts4GeomMetadataReader(), validator);
+            var payloadReader = new PackageResourcePayloadReader();
+            var meshService = new MeshInspectionService(packageService, meshClassifier, ts3Importer, ts4Importer, payloadReader);
+            var textureClassifier = new TextureResourceClassifier();
+            var textureService = new TextureInspectionService(packageService, textureClassifier);
+            var payloadVerifier = new Ts4ResourcePayloadCompatibilityVerifier(payloadReader, ts4Importer);
+
+            IDecorativeObjectConversionService conversionService = new DecorativeObjectConversionService(
+                packageService, meshService, textureService, payloadVerifier: payloadVerifier, dbpfParser: parser
+            );
+
+            // Step 2 & Step 4: Validate genuine source TS4 CAS fixture provenance & TypeIds
+            var inspectResult = await packageService.InspectFileAsync(casFixturePath);
+            inspectResult.IsSuccess.Should().BeTrue("Source TS4 CAS fixture package must parse cleanly.");
+
+            var sourceTypes = inspectResult.Resources.Select(r => r.TypeId).ToHashSet();
+            sourceTypes.Should().Contain(Ts4ResourceTypeIds.CasPartTS4, "Source fixture must contain genuine TS4 CASP resource (0x034B5D85).");
+
+            var itemClassifier = new PackageItemClassifier();
+            var classification = itemClassifier.ClassifyPackage(casFixturePath, inspectResult.Resources);
+            classification.MainCategory.Should().Be(PackageItemCategory.CasPart, "Source fixture must be classified as CasPart.");
+
+            _output.WriteLine("==============================================================================");
+            _output.WriteLine("[SIMS-CONV-CAS-R3-R1 GENUINE TS4 FIXTURE PROVENANCE]");
+            _output.WriteLine($"  File Name:           {Path.GetFileName(casFixturePath)}");
+            _output.WriteLine($"  Golden Fixture Path: {casFixturePath}");
+            _output.WriteLine($"  Total Resources:     {inspectResult.Resources.Count}");
+            _output.WriteLine($"  Required TypeIds:    TS4 CASP (0x034B5D85), GEOM (0x015A1849), RLE2/DDS");
+            _output.WriteLine($"  Parsed Source Types: {string.Join(", ", sourceTypes.Select(t => $"0x{t:X8}"))}");
+            _output.WriteLine($"  Classification:      {classification.MainCategory}");
+            _output.WriteLine("==============================================================================");
+
+            // Step 3 & Step 5: Execute TS4 CASP -> TS3 CASP reverse conversion via UI
+            var viewModel = new ResourceInspectorViewModel(
+                packageService,
+                textureInspectionService: textureService,
+                meshInspectionService: meshService,
+                conversionService: conversionService
+            );
+
+            viewModel.SelectedFilePath = casFixturePath;
+            await viewModel.InspectCommand.ExecuteAsync(null);
+
+            viewModel.HasPackageClassification.Should().BeTrue();
+            viewModel.PackageClassificationCategory.Should().Be(PackageItemCategory.CasPart);
+            viewModel.TargetGameVersion.Should().Be(GameVersion.Sims3, "UI direction selector must recommend TS4 -> TS3 for genuine TS4 CAS package.");
+            viewModel.ConversionDirectionText.Should().Be("TS4 -> TS3");
+            viewModel.CanConvert.Should().BeTrue();
+
+            viewModel.TargetOutputPath = targetPath1;
+            await viewModel.ConvertCommand.ExecuteAsync(null);
+
+            viewModel.IsConversionSuccess.Should().BeTrue("Genuine TS4 CASP -> TS3 CASP reverse conversion must succeed.");
+            File.Exists(targetPath1).Should().BeTrue();
+
+            // Step 5 & Step 6: Validate output DBPF graph & TS3 resource TypeIds
+            var parseResult1 = await parser.ParseFileAsync(targetPath1);
+            parseResult1.IsSuccess.Should().BeTrue("Converted TS3 DBPF package must be valid.");
+
+            var targetTypes = parseResult1.Entries.Select(e => e.Id.TypeId).ToHashSet();
+            targetTypes.Should().Contain(Ts4ResourceTypeIds.CasPartTS3, "Output package must contain TS3 CASP resource (0x0355E0A6).");
+            targetTypes.Should().Contain(Ts4ResourceTypeIds.Geom, "Output package must contain GEOM resource (0x015A1849).");
+            targetTypes.Should().Contain(0x00B2D882u, "Output package must contain decoded TS3 DDS texture resource (0x00B2D882).");
+
+            var verifyResult = await payloadVerifier.VerifyPackagePayloadsAsync(targetPath1, parseResult1);
+            verifyResult.IsSuccess.Should().BeTrue("Output TS3 CAS package payload compatibility verification must succeed.");
+            verifyResult.VerifiedTgiLinkCount.Should().BeGreaterThanOrEqualTo(2, "CASP -> GEOM and CASP -> DDS graph links must be verified.");
+
+            // Step 5: Re-inspect generated TS3 package via UI
+            viewModel.CanInspectConvertedPackage.Should().BeTrue();
+            await viewModel.InspectConvertedPackageCommand.ExecuteAsync(null);
+            viewModel.SelectedFilePath.Should().Be(targetPath1);
+            viewModel.Resources.Should().Contain(r => r.TypeId == Ts4ResourceTypeIds.CasPartTS3);
+
+            // Step 7: Byte-for-Byte Output Determinism across 2 independent runs
+            var viewModel2 = new ResourceInspectorViewModel(
+                packageService, textureInspectionService: textureService, meshInspectionService: meshService, conversionService: conversionService
+            );
+            viewModel2.SelectedFilePath = casFixturePath;
+            await viewModel2.InspectCommand.ExecuteAsync(null);
+            viewModel2.TargetOutputPath = targetPath2;
+            await viewModel2.ConvertCommand.ExecuteAsync(null);
+
+            viewModel2.IsConversionSuccess.Should().BeTrue();
+            byte[] bytes1 = await File.ReadAllBytesAsync(targetPath1);
+            byte[] bytes2 = await File.ReadAllBytesAsync(targetPath2);
+            bytes1.SequenceEqual(bytes2).Should().BeTrue("Two independent conversion runs for the same genuine TS4 input fixture must produce 100% byte-for-byte identical output.");
+
+            // Step 7: Atomic Rollback Preservation Verification on Failure
+            string existingValidTarget = Path.Combine(tempDir, "existing_valid.package");
+            byte[] originalContent = Encoding.UTF8.GetBytes("PRESERVED_TARGET_FILE_PAYLOAD");
+            await File.WriteAllBytesAsync(existingValidTarget, originalContent);
+
+            var viewModelFail = new ResourceInspectorViewModel(
+                packageService, textureInspectionService: textureService, meshInspectionService: meshService, conversionService: conversionService
+            );
+            viewModelFail.SelectedFilePath = Path.Combine(tempDir, "non_existent.package");
+            viewModelFail.TargetGameVersion = GameVersion.Sims3;
+            viewModelFail.TargetOutputPath = existingValidTarget;
+            await viewModelFail.ConvertCommand.ExecuteAsync(null);
+
+            viewModelFail.IsConversionSuccess.Should().BeFalse();
+            File.Exists(existingValidTarget).Should().BeTrue();
+            byte[] currentContent = await File.ReadAllBytesAsync(existingValidTarget);
+            currentContent.SequenceEqual(originalContent).Should().BeTrue("Conversion failure must preserve pre-existing target file untouched.");
+
+            _output.WriteLine("==============================================================================");
+            _output.WriteLine("[SIMS-CONV-CAS-R3-R1 EXECUTION SUMMARY]");
+            _output.WriteLine($"  Test Status:         Passed / Executed");
+            _output.WriteLine($"  Evaluated Fixture:   {Path.GetFileName(casFixturePath)}");
+            _output.WriteLine($"  Source CASP TypeId:  0x034B5D85 (TS4 CASP)");
+            _output.WriteLine($"  Output CASP TypeId:  0x0355E0A6 (TS3 CASP)");
+            _output.WriteLine($"  Output Texture:      0x00B2D882 (Decoded DDS)");
+            _output.WriteLine($"  Output GEOM:         0x015A1849 (Remapped Bone Rig)");
+            _output.WriteLine($"  Determinism:         100% Byte-for-Byte Identical ({bytes1.Length:N0} bytes)");
+            _output.WriteLine($"  Atomic Rollback:     Verified (Pre-existing target preserved)");
+            _output.WriteLine("==============================================================================");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                try { Directory.Delete(tempDir, recursive: true); } catch { }
+            }
+        }
+    }
 }
