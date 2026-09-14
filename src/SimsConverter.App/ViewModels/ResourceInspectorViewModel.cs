@@ -230,6 +230,21 @@ public partial class ResourceInspectorViewModel : ObservableObject
     [ObservableProperty]
     private BatchConversionItem? _selectedBatchItem;
 
+    [ObservableProperty]
+    private string? _lastBatchRunId;
+
+    [ObservableProperty]
+    private string? _lastBatchLogFilePathJson;
+
+    [ObservableProperty]
+    private string? _lastBatchLogFilePathText;
+
+    [ObservableProperty]
+    private string? _batchLogStatusMessage;
+
+    [ObservableProperty]
+    private bool _hasBatchLog;
+
     public ObservableCollection<PackageResourceRow> Resources { get; } = new();
     public ObservableCollection<Sims3PackPayloadRow> Sims3PackPayloads { get; } = new();
     public ObservableCollection<TextureResourceRow> TextureResources { get; } = new();
@@ -1197,8 +1212,16 @@ public partial class ResourceInspectorViewModel : ObservableObject
 
             var result = await _batchConversionService.ExecuteBatchConversionAsync(request, progress, cancellationToken);
 
+            LastBatchRunId = result.RunId;
+            LastBatchLogFilePathJson = result.LogFilePathJson;
+            LastBatchLogFilePathText = result.LogFilePathText;
+            HasBatchLog = !string.IsNullOrWhiteSpace(result.LogFilePathText) || !string.IsNullOrWhiteSpace(result.LogFilePathJson);
+            BatchLogStatusMessage = HasBatchLog
+                ? $"Run ID: {result.RunId} | Log: {result.LogFilePathText}"
+                : "No log file generated.";
+
             UpdateBatchCounts();
-            StatusMessage = $"Batch conversion finished! Processed {result.TotalCount} files ({result.SuccessCount} successful, {result.FailedCount} failed, {result.SkippedCount} skipped, {result.IgnoredCount} ignored).";
+            StatusMessage = $"Batch conversion finished! Processed {result.TotalCount} files ({result.SuccessCount} successful, {result.FailedCount} failed, {result.SkippedCount} skipped, {result.IgnoredCount} ignored). Diagnostic log saved to {result.LogFilePathText}";
         }
         catch (Exception ex)
         {
@@ -1209,6 +1232,27 @@ public partial class ResourceInspectorViewModel : ObservableObject
             IsBatchProcessing = false;
             IsBusy = false;
             UpdateBatchCounts();
+        }
+    }
+
+    [RelayCommand]
+    public async Task OpenLastBatchLogAsync()
+    {
+        string? path = LastBatchLogFilePathText ?? LastBatchLogFilePathJson;
+        if (!string.IsNullOrWhiteSpace(path) && _filePickerService != null)
+        {
+            await _filePickerService.OpenFileWithDefaultAppAsync(path);
+        }
+    }
+
+    [RelayCommand]
+    public async Task CopyLogPathAsync()
+    {
+        string? path = LastBatchLogFilePathText ?? LastBatchLogFilePathJson;
+        if (!string.IsNullOrWhiteSpace(path) && _filePickerService != null)
+        {
+            await _filePickerService.CopyToClipboardAsync(path);
+            StatusMessage = $"Copied log file path to clipboard: {path}";
         }
     }
 

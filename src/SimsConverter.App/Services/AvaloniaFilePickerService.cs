@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Platform.Storage;
 
 namespace SimsConverter.App.Services;
@@ -121,5 +122,38 @@ public class AvaloniaFilePickerService : IFilePickerService
         }
 
         return null;
+    }
+
+    public async Task CopyToClipboardAsync(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        var window = _windowProvider();
+        if (window == null) return;
+
+        var topLevel = TopLevel.GetTopLevel(window);
+        if (topLevel?.Clipboard != null)
+        {
+            await topLevel.Clipboard.SetTextAsync(text).ConfigureAwait(false);
+        }
+    }
+
+    public Task OpenFileWithDefaultAppAsync(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
+        {
+            return Task.CompletedTask;
+        }
+
+        try
+        {
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = filePath,
+                UseShellExecute = true
+            });
+        }
+        catch { }
+
+        return Task.CompletedTask;
     }
 }

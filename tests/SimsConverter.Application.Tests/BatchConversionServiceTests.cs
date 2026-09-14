@@ -291,6 +291,9 @@ public class BatchConversionServiceTests
             batchResult.TotalCount.Should().Be(scanResult.TotalCount);
 
             _output.WriteLine($"[EXECUTED/PASSED] Batch conversion completed on real folder fixture '{indiPath}'. Total items: {scanResult.TotalCount}, Converted: {batchResult.SuccessCount}, Failed: {batchResult.FailedCount}, Skipped: {batchResult.SkippedCount}, Ignored Images: {batchResult.IgnoredCount}.");
+            _output.WriteLine($"[DIAGNOSTIC LOG EXPORT] Run ID: {batchResult.RunId}");
+            _output.WriteLine($"[DIAGNOSTIC LOG EXPORT] JSON Log Path: {batchResult.LogFilePathJson}");
+            _output.WriteLine($"[DIAGNOSTIC LOG EXPORT] Text Log Path: {batchResult.LogFilePathText}");
         }
         finally
         {
@@ -298,6 +301,60 @@ public class BatchConversionServiceTests
             {
                 try { Directory.Delete(tempDir, true); } catch { }
             }
+        }
+    }
+
+    private class ThrowingFaultyLogger : IBatchDiagnosticLogger
+    {
+        public BatchRunLog? CurrentSession => null;
+        public BatchRunLog StartBatchSession(string sourceFolderPath, string outputFolderPath, string? customRunId = null) => throw new InvalidOperationException("Simulated logger failure!");
+        public void LogPipelinePhase(string phase, string message, string? fileName = null, bool isSuccess = true, string? details = null) => throw new InvalidOperationException("Simulated logger phase failure!");
+        public void RecordItemResult(BatchItemDiagnosticLog itemLog) => throw new InvalidOperationException("Simulated logger record failure!");
+        public Task<(string JsonPath, string TextPath)> CompleteAndExportBatchSessionAsync(string? baseDirectory = null) => throw new InvalidOperationException("Simulated logger export failure!");
+    }
+
+    [Fact]
+    public async Task ExecuteBatchConversionAsync_WhenDiagnosticLoggerThrows_DoesNotFailOrInterruptConversion()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "faulty_logger_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var dbpfParser = new DbpfPackageParser();
+            var packageService = new PackageInspectionService(dbpfParser);
+            var meshClassifier = new MeshResourceClassifier();
+            var validator = new CanonicalMeshValidator();
+            var payloadReader = new PackageResourcePayloadReader();
+            var ts3Importer = new Ts3GeomCanonicalMeshImporter(new Ts3GeomMetadataReader(), validator);
+            var ts4Importer = new Ts4GeomCanonicalMeshImporter(new Ts4GeomMetadataReader(), validator);
+            var meshService = new MeshInspectionService(packageService, meshClassifier, ts3Importer, ts4Importer, payloadReader);
+            var texClassifier = new TextureResourceClassifier();
+            var texService = new TextureInspectionService(packageService, texClassifier);
+            var payloadVerifier = new Ts4ResourcePayloadCompatibilityVerifier(payloadReader, ts4Importer);
+            var itemClassifier = new PackageItemClassifier();
+
+            var decorativeService = new DecorativeObjectConversionService(packageService, meshService, texService, payloadVerifier: payloadVerifier, dbpfParser: dbpfParser);
+            var casService = new CasItemConversionService(packageService, payloadReader: payloadReader, payloadVerifier: payloadVerifier, dbpfParser: dbpfParser);
+
+            var faultyLogger = new ThrowingFaultyLogger();
+            var batchService = new BatchConversionService(packageService, decorativeService, casService, itemClassifier, diagnosticLogger: faultyLogger);
+
+            string file1 = Path.Combine(tempDir, "item.package");
+            await CreateDummyPackageAsync(file1, 0x034B5D85);
+
+            var scanRes = await batchService.ScanFolderAsync(tempDir);
+            var req = new BatchConversionRequest(tempDir, items: scanRes.Items);
+
+            // Act - Logging exception must NOT fail batch conversion execution
+            var result = await batchService.ExecuteBatchConversionAsync(req);
+
+            result.Should().NotBeNull();
+            result.TotalCount.Should().Be(1);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) try { Directory.Delete(tempDir, true); } catch { }
         }
     }
 }

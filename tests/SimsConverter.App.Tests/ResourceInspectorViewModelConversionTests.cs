@@ -713,5 +713,15 @@ public class ResourceInspectorViewModelConversionTests
         {
             return Task.FromResult(_savePackagePath);
         }
+
+        public Task CopyToClipboardAsync(string text)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task OpenFileWithDefaultAppAsync(string filePath)
+        {
+            return Task.CompletedTask;
+        }
     }
 }

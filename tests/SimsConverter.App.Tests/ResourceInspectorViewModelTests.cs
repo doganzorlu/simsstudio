@@ -606,7 +606,17 @@ public class ResourceInspectorViewModelTests
 
         public Task<string?> SavePackageFilePickerAsync()
         {
-            return Task.FromResult(_pickedPackagePath);
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task CopyToClipboardAsync(string text)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task OpenFileWithDefaultAppAsync(string filePath)
+        {
+            return Task.CompletedTask;
         }
     }
 }

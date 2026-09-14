@@ -410,7 +410,7 @@
                             CornerRadius="4"
                             Padding="12"
                             Margin="0,0,0,12">
-                        <Grid ColumnDefinitions="*, Auto, Auto, Auto" RowDefinitions="Auto, Auto, Auto, Auto">
+                        <Grid ColumnDefinitions="*, Auto, Auto, Auto" RowDefinitions="Auto, Auto, Auto, Auto, Auto">
                             <!-- OS Selection Guidance Banner -->
                             <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="4"
                                        Text="💡 Folder Selection Guide: macOS users: highlight or open folder and click 'Open'. Windows users: click 'Select Folder'."
@@ -431,6 +431,13 @@
                                 <TextBlock Text="{Binding BatchSourceFolderPath, StringFormat='Source Path: {0}'}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                                 <TextBlock Text="{Binding BatchOutputFolderPath, StringFormat='Target Path: {0}'}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                             </StackPanel>
+
+                            <!-- Batch Diagnostic Log Actions & Status Bar -->
+                            <Grid Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="4" ColumnDefinitions="*, Auto, Auto" Margin="0,8,0,0" IsVisible="{Binding HasBatchLog}">
+                                <TextBlock Grid.Column="0" Text="{Binding BatchLogStatusMessage}" VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextTrimming="CharacterEllipsis"/>
+                                <Button Grid.Column="1" Command="{Binding OpenLastBatchLogCommand}" Content="Open Last Batch Log" Margin="8,0,8,0"/>
+                                <Button Grid.Column="2" Command="{Binding CopyLogPathCommand}" Content="Copy Log Path"/>
+                            </Grid>
                         </Grid>
                     </Border>
 

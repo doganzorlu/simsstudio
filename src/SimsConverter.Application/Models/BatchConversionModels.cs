@@ -63,6 +63,9 @@ public class BatchConversionResult
     public int FailedCount { get; set; }
     public int SkippedCount { get; set; }
     public int IgnoredCount { get; set; }
+    public string RunId { get; set; } = string.Empty;
+    public string? LogFilePathJson { get; set; }
+    public string? LogFilePathText { get; set; }
     public IReadOnlyList<BatchConversionItem> Items { get; set; }
 
     public BatchConversionResult(
@@ -72,7 +75,10 @@ public class BatchConversionResult
         int successCount = 0,
         int failedCount = 0,
         int skippedCount = 0,
-        int ignoredCount = 0)
+        int ignoredCount = 0,
+        string runId = "",
+        string? logFilePathJson = null,
+        string? logFilePathText = null)
     {
         SourceFolderPath = sourceFolderPath;
         OutputFolderPath = outputFolderPath;
@@ -81,5 +87,8 @@ public class BatchConversionResult
         FailedCount = failedCount;
         SkippedCount = skippedCount;
         IgnoredCount = ignoredCount;
+        RunId = runId;
+        LogFilePathJson = logFilePathJson;
+        LogFilePathText = logFilePathText;
     }
 }

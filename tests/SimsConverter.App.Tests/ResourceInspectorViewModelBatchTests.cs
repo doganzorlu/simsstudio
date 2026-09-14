@@ -75,6 +75,21 @@ public class ResourceInspectorViewModelBatchTests
         }
 
         public Task<string?> SavePackageFilePickerAsync() => Task.FromResult<string?>(null);
+
+        public Task CopyToClipboardAsync(string text)
+        {
+            LastCopiedText = text;
+            return Task.CompletedTask;
+        }
+
+        public Task OpenFileWithDefaultAppAsync(string filePath)
+        {
+            LastOpenedFilePath = filePath;
+            return Task.CompletedTask;
+        }
+
+        public string? LastCopiedText { get; private set; }
+        public string? LastOpenedFilePath { get; private set; }
     }
 
     [Fact]
